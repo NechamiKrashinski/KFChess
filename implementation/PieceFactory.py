@@ -1,12 +1,12 @@
 import pathlib
 from typing import Dict, Tuple
 import json
-from Board import Board
-from GraphicsFactory import GraphicsFactory
-from Moves import Moves
-from PhysicsFactory import PhysicsFactory
-from Piece import Piece
-from State import State
+from board import Board
+from graphicsFactory import GraphicsFactory
+from moves import Moves
+from physicsFactory import PhysicsFactory
+from piece import Piece
+from state import State
 
 
 class PieceFactory:

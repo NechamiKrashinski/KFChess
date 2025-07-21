@@ -1,5 +1,5 @@
-from Board import Board
-from Physics import Physics
+from board import Board
+from physics import Physics
 
 
 class PhysicsFactory:      # very light for now
