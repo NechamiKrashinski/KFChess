@@ -50,12 +50,13 @@ class Graphics:
         new_graphics = Graphics.__new__(Graphics)
         new_graphics.sprites_folder = copy.deepcopy(self.sprites_folder)
         new_graphics.board = copy.deepcopy(self.board)
-        new_graphics.loop = self.loop  # אם זה immutable אין צורך להעתיק
+        new_graphics.loop = self.loop
         new_graphics.fps = self.fps
         new_graphics.sprites = copy.deepcopy(self.sprites)
         new_graphics.total_frames = self.total_frames
         new_graphics.cur_index = self.cur_index
         new_graphics.last_frame_time = self.last_frame_time
+        new_graphics.cur_index = self.cur_index
         return new_graphics
     
 

@@ -1,5 +1,6 @@
 # mock_img.py
-from img import Img
+import numpy as np
+from .img import Img
 
 class MockImg(Img):
     """Headless Img that just records calls."""
@@ -7,7 +8,7 @@ class MockImg(Img):
     txt_traj : list[tuple[tuple[int,int],str]] = []
 
     def __init__(self):                     # override, no cv2 needed
-        self.img = "MOCK-PIXELS"
+        self.img = np.ones((800, 800, 3), dtype=np.uint8) * 255  # 3 ערוצים
 
     # keep the method names identical to Img -------------------------
     def read(self, path, *_, **__):
