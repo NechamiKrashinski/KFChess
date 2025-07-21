@@ -1,0 +1,12 @@
+{
+  "id": "QW",
+  "moves": "moves.txt",
+  "initial_state": "idle",
+  "states": [
+    "idle",
+    "jump",
+    "long_rest",
+    "move",
+    "short_rest"
+  ]
+}

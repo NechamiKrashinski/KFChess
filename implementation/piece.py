@@ -34,29 +34,27 @@ class Piece:
         self._state = self._state.update(now_ms)
 
     def draw_on_board(self, board: Board, now_ms: int):
-        """Draw the piece on the board with cooldown overlay if applicable."""
+        """
+        Draw the piece on the board with cooldown overlay.
+        """
         self.update(now_ms)
 
-        img = self._state.get_graphics().get_img()
+        # קבלת התמונה של הכלי מתוך ה-State
+        piece_img = self._state.get_graphics().get_img()
         pos_x, pos_y = self._state.get_physics().get_pos()
 
         board_x = int(pos_x / board.cell_W_m * board.cell_W_pix)
         board_y = int(pos_y / board.cell_H_m * board.cell_H_pix)
 
-        h, w = img.img.shape[:2]
-        H, W = board.img.img.shape[:2]
-
-        if board_y + h > H or board_x + w > W:
-            raise ValueError("Image drawing exceeds board dimensions.")
-
-        # Draw the piece on the board
-        roi = board.img.img[board_y:board_y + h, board_x:board_x + w]
-        board.img.img[board_y:board_y + h, board_x:board_x + w] = cv2.add(roi, img.img)
-
-        # Apply cooldown overlay if transition not allowed
+        # ציור הכלי על הלוח באמצעות Img
+        piece_img.draw_on(other_img=board.img, x=board_x, y=board_y)
+        
+        # אם יש Cooldown, לצייר שכבה נוספת
         if not self._state.can_transition(now_ms):
-            overlay = img.img.copy()
-            cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 255), -1)
-            alpha = 0.4
-            blended = cv2.addWeighted(roi, 1 - alpha, overlay, alpha, 0)
-            board.img.img[board_y:board_y + h, board_x:board_x + w] = blended
+            cooldown_img = piece_img.clone()
+            cv2.rectangle(cooldown_img.img, (0, 0), (w, h), (0, 0, 255), -1)
+            cooldown_img.draw_on(other_img=board.img, x=board_x, y=board_y, alpha=0.4)
+
+    def get_physics(self):
+        """Get the physics object of the current state."""
+        return self._state.get_physics()

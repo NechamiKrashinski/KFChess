@@ -2,91 +2,162 @@ import inspect
 import pathlib
 import queue, threading, time, cv2, math
 from typing import List, Dict, Tuple, Optional
-from board   import Board
-from command import Command
-from piece   import Piece
-from img     import Img
+from .board import Board
+from .command import Command
+from .piece import Piece
+from .img import Img
 
 
-class InvalidBoard(Exception): ...
+class InvalidBoard(Exception):
+    ...
 # ────────────────────────────────────────────────────────────────────
 class Game:
     def __init__(self, pieces: List[Piece], board: Board):
         """Initialize the game with pieces, board, and optional event bus."""
-        self.pieces = { p.piece_id : p for p in pieces}
-        pass
+        self.board = board
+        self.pieces: Dict[str, Piece] = {p.piece_id: p for p in pieces}
+        self.user_input_queue: queue.Queue = queue.Queue()
+        self.start_time_ns = time.time_ns()
+        self.running = True
 
     # ─── helpers ─────────────────────────────────────────────────────────────
     def game_time_ms(self) -> int:
         """Return the current game time in milliseconds."""
-        pass
+        return (time.time_ns() - self.start_time_ns) // 1_000_000
 
     def clone_board(self) -> Board:
         """
         Return a **brand-new** Board wrapping a copy of the background pixels
         so we can paint sprites without touching the pristine board.
         """
-        pass
+        # יוצר עותק עמוק של תמונת הלוח כדי למנוע ציור על הרקע המקורי
+        return Board(self.board.W_cells, self.board.H_cells, self.board.img.img.copy())
 
     def start_user_input_thread(self):
         """Start the user input thread for mouse handling."""
-        pass
+        thread = threading.Thread(target=self._mouse_handler_loop, daemon=True)
+        thread.start()
+
+    def _mouse_handler_loop(self):
+        """Handle mouse clicks and queue commands in a separate thread."""
+        while self.running:
+            # Placeholder for mouse handling logic.
+            # In a real game, this would listen for mouse events and create commands.
+            # For now, we'll just simulate a command or sleep to prevent high CPU usage.
+            time.sleep(0.01)
 
     # ─── main public entrypoint ──────────────────────────────────────────────
     def run(self):
         """Main game loop."""
-        self.start_user_input_thread() # QWe2e5
+        cv2.imshow("Board", self.board.img.img)
+        cv2.setMouseCallback("Board", self._mouse_callback)
+
+        # QWe2e5
+        # The provided skeleton has a command queue, so let's start the thread.
+        self.start_user_input_thread() 
 
         start_ms = self.game_time_ms()
-        for p in self.pieces:
-            p.reset(start_ms)
+        for p in self.pieces.values():
+            cmd = Command(
+                timestamp=start_ms,
+                piece_id=p.piece_id,
+                type="init",
+                params=p.get_physics().get_pos()
+            )         
+            p.on_command(cmd, start_ms)
 
         # ─────── main loop ──────────────────────────────────────────────────
-        while not self._is_win():
-            now = self.game_time_ms() # monotonic time ! not computer time.
+        while self.running:
+            now = self.game_time_ms()
 
             # (1) update physics & animations
-            for p in self.pieces:
+            for p in self.pieces.values():
                 p.update(now)
 
             # (2) handle queued Commands from mouse thread
-            while not self.user_input_queue.empty(): # QWe2e5
+            # The provided skeleton has a command queue. Let's process it.
+            while not self.user_input_queue.empty():
                 cmd: Command = self.user_input_queue.get()
-                self._process_input(cmd)
+                self._process_input(cmd, now)
 
             # (3) draw current position
-            self._draw()
-            if not self._show():           # returns False if user closed window
-                break
-
+            self._draw(now)
+            if not self._show():
+                self.running = False  # Set running flag to False if user closes window
+            
             # (4) detect captures
-            self._resolve_collisions()
+            self._resolve_collisions(now)
+            
+            if self._is_win():
+                break
 
         self._announce_win()
         cv2.destroyAllWindows()
 
     # ─── drawing helpers ────────────────────────────────────────────────────
-    def _process_input(self, cmd : Command):
-        self.pieces[cmd.piece_id].on_command(cmd)
+    def _mouse_callback(self, event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            # Here, you would map click coordinates to a piece and command
+            # For now, this is a placeholder
+            # For example:
+            # piece_id = self.find_piece_at_coords(x, y)
+            # if piece_id:
+            #     cmd = Command(piece_id=piece_id, type="Click", params=(x,y), timestamp=self.game_time_ms())
+            #     self.user_input_queue.put(cmd)
+            pass
 
-    def _draw(self):
+    def _process_input(self, cmd: Command, now_ms: int):
+        if cmd.piece_id in self.pieces:
+            self.pieces[cmd.piece_id].on_command(cmd, now_ms)
+
+    def _draw(self, now_ms: int):
         """Draw the current game state."""
-        pass
-
+        cloned_board = self.clone_board()
+        for p in self.pieces.values():
+            p.draw_on_board(cloned_board, now_ms)
+        self.current_frame = cloned_board.img.img
+        
     def _show(self) -> bool:
         """Show the current frame and handle window events."""
-        pass
+        cv2.imshow("Board", self.current_frame)
+        key = cv2.waitKey(1) & 0xFF
+        if key == 27: # ESC key
+            return False
+        return True
 
     # ─── capture resolution ────────────────────────────────────────────────
-    def _resolve_collisions(self):
+    def _resolve_collisions(self, now_ms: int):
         """Resolve piece collisions and captures."""
-        pass
-
+        pieces_to_check = list(self.pieces.values())
+        for i in range(len(pieces_to_check)):
+            for j in range(i + 1, len(pieces_to_check)):
+                p1 = pieces_to_check[i]
+                p2 = pieces_to_check[j]
+                
+                # Assume a simple collision check based on position
+                pos1 = p1.get_physics().get_pos()
+                pos2 = p2.get_physics().get_pos()
+                distance = math.sqrt((pos1[0]-pos2[0])**2 + (pos1[1]-pos2[1])**2)
+                
+                if distance < 50: # Assume a collision distance of 50m
+                    if p1.get_physics().can_capture() and p2.get_physics().can_be_captured():
+                        print(f"Piece {p1.piece_id} captures {p2.piece_id}!")
+                        del self.pieces[p2.piece_id]
+                    elif p2.get_physics().can_capture() and p1.get_physics().can_be_captured():
+                        print(f"Piece {p2.piece_id} captures {p1.piece_id}!")
+                        del self.pieces[p1.piece_id]
+                        
     # ─── board validation & win detection ───────────────────────────────────
     def _is_win(self) -> bool:
         """Check if the game has ended."""
-        pass
+        if len(self.pieces) <= 1:
+            return True
+        return False
 
     def _announce_win(self):
         """Announce the winner."""
-        pass
+        if len(self.pieces) == 1:
+            winner = list(self.pieces.values())[0]
+            print(f"Game over! The winner is {winner.piece_id}")
+        else:
+            print("Game over! It's a draw.")

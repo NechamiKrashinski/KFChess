@@ -47,21 +47,14 @@ class Graphics:
         """
         Create a deep copy of this Graphics object.
         """
-        new_graphics = Graphics.__new__(Graphics)
-        new_graphics.sprites_folder = copy.deepcopy(self.sprites_folder)
-        new_graphics.board = copy.deepcopy(self.board)
-        new_graphics.loop = self.loop
-        new_graphics.fps = self.fps
-        new_graphics.sprites = copy.deepcopy(self.sprites)
-        new_graphics.total_frames = self.total_frames
-        new_graphics.cur_index = self.cur_index
-        new_graphics.last_frame_time = self.last_frame_time
-        new_graphics.cur_index = self.cur_index
-        return new_graphics
-    
+        # השימוש ב-deepcopy מבטיח שכל האובייקטים הפנימיים יועתקו
+        # ולא יפנו לאותם אובייקטים בזיכרון.
+        return copy.deepcopy(self)
 
+    
+    
     def reset(self, cmd: Command):
-        """
+        """ 
         Reset animation state (start from frame 0).
         """
         self.cur_index = 0

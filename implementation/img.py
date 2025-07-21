@@ -53,32 +53,45 @@ class Img:
 
         return self
 
-    def draw_on(self, other_img, x, y):
-        if self.img is None or other_img.img is None:
-            raise ValueError("Both images must be loaded before drawing.")
+    class Img:
+    # ... (שאר הקוד של המחלקה)
 
-        if self.img.shape[2] != other_img.img.shape[2]:
-            if self.img.shape[2] == 3 and other_img.img.shape[2] == 4:
-                self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2BGRA)
-            elif self.img.shape[2] == 4 and other_img.img.shape[2] == 3:
-                self.img = cv2.cvtColor(self.img, cv2.COLOR_BGRA2BGR)
+        def draw_on(self, other_img, x, y, alpha=1.0):
+            """
+            Draws this image onto another Img object at a specific position.
+            The alpha parameter controls the transparency of the drawn image.
+            """
+            if self.img is None or other_img.img is None:
+                raise ValueError("Both images must be loaded before drawing.")
 
-        h, w = self.img.shape[:2]
-        H, W = other_img.img.shape[:2]
+            h, w = self.img.shape[:2]
+            H, W = other_img.img.shape[:2]
 
-        if y + h > H or x + w > W:
-            raise ValueError("Logo does not fit at the specified position.")
+            if y + h > H or x + w > W:
+                # במקום להעלות שגיאה, נדפיס אזהרה ונתעלם.
+                print("Warning: Image drawing exceeds board dimensions.")
+                return
 
-        roi = other_img.img[y:y + h, x:x + w]
+            roi = other_img.img[y:y + h, x:x + w]
+            
+            # שימוש בערוץ האלפא, אם קיים, לשילוב
+            if self.img.shape[2] == 4:
+                b, g, r, a = cv2.split(self.img)
+                mask = a.astype(float) / 255.0
+                
+                # Blend the piece onto the ROI, using the alpha channel for transparency
+                for c in range(3):
+                    roi[..., c] = (1 - mask) * roi[..., c] + mask * self.img[..., c]
+            else: # אין ערוץ אלפא
+                roi[:] = self.img
 
-        if self.img.shape[2] == 4:
-            b, g, r, a = cv2.split(self.img)
-            mask = a / 255.0
-            for c in range(3):
-                roi[..., c] = (1 - mask) * roi[..., c] + mask * self.img[..., c]
-        else:
-            other_img.img[y:y + h, x:x + w] = self.img
-
+            # עכשיו, נטפל בשקיפות הכללית עם הפרמטר alpha
+            if alpha < 1.0:
+                blended = cv2.addWeighted(roi, alpha, roi, 1 - alpha, 0)
+                other_img.img[y:y + h, x:x + w] = blended
+            else:
+                other_img.img[y:y + h, x:x + w] = roi
+    
     def put_text(self, txt, x, y, font_size, color=(255, 255, 255, 255), thickness=1):
         if self.img is None:
             raise ValueError("Image not loaded.")
@@ -92,3 +105,13 @@ class Img:
         cv2.imshow("Image", self.img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
+
+    def clone(self) -> "Img":
+        """
+        Creates a new Img instance with a deep copy of the image data.
+        """
+        new_instance = Img()
+        if self.img is not None:
+            # .copy() is a NumPy method that creates a new array with the same data
+            new_instance.img = self.img.copy()
+        return new_instance

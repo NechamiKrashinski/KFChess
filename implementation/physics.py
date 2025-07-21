@@ -42,9 +42,9 @@ class MovePhysics(Physics):
     def __init__(self, start_cell: Tuple[int, int],
                  board: Board, speed_m_s: float = 1.0):
         super().__init__(start_cell, board, speed_m_s)
-        self.end_cell: Tuple[int, int] = start_cell
-        self.vector_m: Tuple[float, float] = (0.0, 0.0)
-        self.duration_s: float = 0.0
+        self.end_cell: Tuple[int, int] = start_cell  # אתחול
+        self.vector_m: Tuple[float, float] = (0.0, 0.0) # אתחול
+        self.duration_s: float = 0.0  # אתחול
 
     def reset(self, cmd: Command):
         super().reset(cmd)
