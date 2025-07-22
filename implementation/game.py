@@ -19,6 +19,10 @@ class Game:
         self.user_input_queue: queue.Queue = queue.Queue()
         self.start_time_ns = time.time_ns()
         self.running = True
+        self.selected_piece_id: Optional[str] = None
+        self.selected_cell: Optional[Tuple[int, int]] = None
+
+
 
     # ─── helpers ─────────────────────────────────────────────────────────────
     def game_time_ms(self) -> int:
@@ -104,15 +108,50 @@ class Game:
 
     # ─── drawing helpers ────────────────────────────────────────────────────
     def _mouse_callback(self, event, x, y, flags, param):
-        if event == cv2.EVENT_LBUTTONDOWN:
-            # Here, you would map click coordinates to a piece and command
-            # For now, this is a placeholder
-            # For example:
-            # piece_id = self.find_piece_at_coords(x, y)
-            # if piece_id:
-            #     cmd = Command(piece_id=piece_id, type="Click", params=(x,y), timestamp=self.game_time_ms())
-            #     self.user_input_queue.put(cmd)
-            pass
+        if event != cv2.EVENT_LBUTTONDOWN:
+            return
+
+        # חשב את תא הלוח שנלחץ
+        col = x // self.board.cell_W_pix
+        row = y // self.board.cell_H_pix
+        clicked_cell = (col, row)
+
+        # בדיקה אם יש כלי בתא שנלחץ
+        clicked_piece_id = None
+        for pid, piece in self.pieces.items():
+            if piece.get_physics().get_cell() == clicked_cell:
+                clicked_piece_id = pid
+                break
+
+        if self.selected_piece_id is None:
+            # קליק ראשון: בחרי כלי
+            if clicked_piece_id:
+                self.selected_piece_id = clicked_piece_id
+                self.selected_cell = clicked_cell
+                print(f"Selected piece {clicked_piece_id} at {clicked_cell}")
+        else:
+            # קליק שני: נסי להזיז ליעד
+            target_cell = clicked_cell
+            piece = self.pieces[self.selected_piece_id]
+            occupied = [p.get_physics().get_cell() for pid, p in self.pieces.items()
+            if pid != self.selected_piece_id and p.piece_id[1] != self.pieces[self.selected_piece_id].piece_id[1]]
+            moves = piece.get_moves(occupied)
+            if target_cell in moves:
+                cmd = Command(
+                    timestamp=self.game_time_ms(),
+                    piece_id=self.selected_piece_id,
+                    type="Move",
+                    params=list(target_cell)
+                )
+                self.user_input_queue.put(cmd)
+                print(f"Queued move command: {self.selected_piece_id} → {target_cell}")
+            else:
+                print(f"Illegal move for {self.selected_piece_id} → {target_cell}")
+
+            # אפס בחירה תמיד אחרי קליק שני
+            self.selected_piece_id = None
+            self.selected_cell = None
+
 
     def _process_input(self, cmd: Command, now_ms: int):
         if cmd.piece_id in self.pieces:

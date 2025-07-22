@@ -100,6 +100,7 @@ class PieceFactory:
                 graphics=graphics,
                 physics=physics
             )
+            print(f"[DEBUG] Created state '{state_name}' for piece '{piece_type}' with graphics and physics.")
 
         # Stage 2: Link the states based on config
         for state_name, state_obj in state_objects.items():

@@ -42,6 +42,14 @@ class Physics:
         row = int(self.cur_pos_m[1] / self.board.cell_H_m)
         return (col, row)
 
+    def create_movement_to(self, target_cell: Tuple[int, int], speed: float = 1.0) -> 'Physics':
+        """
+        מחזיר מופע חדש של MovePhysics שיזוז מהתא הנוכחי ל־target_cell.
+        """
+        move = MovePhysics(start_cell=self.get_cell(), board=self.board, speed_m_s=speed)
+        move.end_cell = target_cell
+        return move
+
 class IdlePhysics(Physics):
     def update(self, now_ms: int) -> Command:
         return self.cmd
@@ -99,3 +107,6 @@ class MovePhysics(Physics):
     def can_capture(self) -> bool:
         """כלי בתנועה *כן* יכול ללכוד בסיום התנועה שלו."""
         return True
+    
+    
+

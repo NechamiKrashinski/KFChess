@@ -7,17 +7,48 @@ class Img:
     def __init__(self):
         self.img = None
 
+    # def read(self, path: str | pathlib.Path,
+    #          size: tuple[int, int] | None = None,
+    #          keep_aspect: bool = False,
+    #          interpolation: int = cv2.INTER_AREA) -> "Img":
+    #     path = str(path)
+    #     self.img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    #     if self.img is None:
+    #         raise FileNotFoundError(f"Cannot load image: {path}")
+
+    #     if self.img.shape[2] == 3:
+    #         self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2BGRA)
+    #     if size is not None:
+    #         target_w, target_h = size
+    #         h, w = self.img.shape[:2]
+
+    #         if keep_aspect:
+    #             scale = min(target_w / w, target_h / h)
+    #             new_w, new_h = int(w * scale), int(h * scale)
+    #         else:
+    #             new_w, new_h = target_w, target_h
+
+    #         self.img = cv2.resize(self.img, (new_w, new_h), interpolation=interpolation)
+
+    #     return self
+
     def read(self, path: str | pathlib.Path,
-             size: tuple[int, int] | None = None,
-             keep_aspect: bool = False,
-             interpolation: int = cv2.INTER_AREA) -> "Img":
+         size: tuple[int, int] | None = None,
+         keep_aspect: bool = False,
+         interpolation: int = cv2.INTER_AREA) -> "Img":
         path = str(path)
         self.img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
         if self.img is None:
             raise FileNotFoundError(f"Cannot load image: {path}")
 
+        # המרה ל-4 ערוצים (RGBA)
         if self.img.shape[2] == 3:
             self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2BGRA)
+        
+        # אם יש 4 ערוצים, ניתן להמיר ל-3 ערוצים
+        elif self.img.shape[2] == 4:
+            self.img = cv2.cvtColor(self.img, cv2.COLOR_BGRA2BGR)
+
         if size is not None:
             target_w, target_h = size
             h, w = self.img.shape[:2]
@@ -32,6 +63,7 @@ class Img:
 
         return self
 
+
     def draw_on(self, other_img, x, y, alpha=1.0):
         if self.img is None or other_img.img is None:
             raise ValueError("Both images must be loaded before drawing.")
@@ -44,21 +76,24 @@ class Img:
             return
 
         roi = other_img.img[y:y + h, x:x + w]
-        
+
         if self.img.shape[2] == 4:
+            # שקיפות מובנית מתוך ערוץ Alpha
             b, g, r, a = cv2.split(self.img)
             mask = a.astype(float) / 255.0
-            
-            for c in range(3):
-                roi[..., c] = (1 - mask) * roi[..., c] + mask * self.img[..., c]
-        else:
-            roi[:] = self.img
+            rgb = self.img[..., :3].astype(float)
+            roi_float = roi.astype(float)
+            blended = (1 - mask[..., None]) * roi_float + mask[..., None] * rgb
+            roi[:] = blended.astype(roi.dtype)
 
-        if alpha < 1.0:
-            blended = cv2.addWeighted(roi, alpha, roi, 1 - alpha, 0)
-            other_img.img[y:y + h, x:x + w] = blended
         else:
-            other_img.img[y:y + h, x:x + w] = roi
+            # אין Alpha, אז מצייר רגיל
+            if alpha < 1.0:
+                blended = cv2.addWeighted(self.img, alpha, roi, 1 - alpha, 0)
+                other_img.img[y:y + h, x:x + w] = blended
+            else:
+                roi[:] = self.img[..., :3]  # אם אין ערוץ Alpha, העתק רק את הערוצים RGB
+
 
     def put_text(self, txt, x, y, font_size, color=(255, 255, 255, 255), thickness=1):
         if self.img is None:

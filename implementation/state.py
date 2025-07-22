@@ -1,3 +1,4 @@
+import cmd
 from typing import Dict, Optional
 from .command import Command
 from .moves import Moves
@@ -52,19 +53,39 @@ class State:
 
         return self
 
+    # def process_command(self, cmd: Command, now_ms: int) -> 'State':
+    #     """
+    #     עיבוד פקודה - אם קיימת הגדרת מעבר למצב אחר לפי סוג הפקודה,
+    #     מבצע מעבר, אחרת נשאר באותו מצב.
+    #     """
+    #     self._current_command = cmd
+    #     next_state = self._transitions.get(cmd.type)
+
+    #     if next_state is None:
+    #         return self  # אין מעבר תקף, נשאר באותו מצב
+
+    #     next_state.reset(cmd)
+    #     return next_state
     def process_command(self, cmd: Command, now_ms: int) -> 'State':
-        """
-        עיבוד פקודה - אם קיימת הגדרת מעבר למצב אחר לפי סוג הפקודה,
-        מבצע מעבר, אחרת נשאר באותו מצב.
-        """
         self._current_command = cmd
+
+        if cmd.type == "Move":
+            new_physics = self._physics.create_movement_to(tuple(cmd.params))
+            new_state = State(
+                moves=self._moves,
+                graphics=self._graphics,
+                physics=new_physics
+            )
+            new_state.reset(cmd)
+            return new_state
+
         next_state = self._transitions.get(cmd.type)
-
         if next_state is None:
-            return self  # אין מעבר תקף, נשאר באותו מצב
-
+            return self
         next_state.reset(cmd)
         return next_state
+
+
 
     def can_transition(self, now_ms: int) -> bool:
         """
@@ -83,3 +104,7 @@ class State:
 
     def get_graphics(self): return self._graphics
     def get_physics(self): return self._physics
+
+
+    def get_moves(self) -> Moves:
+        return self._moves
