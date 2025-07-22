@@ -4,7 +4,7 @@ import queue, threading, time, cv2, math
 from typing import List, Dict, Tuple, Optional
 from .board import Board
 from .command import Command
-from .piece import Piece
+from .piece import Piece # וודא ייבוא נכון
 from .img import Img
 
 
@@ -15,12 +15,14 @@ class Game:
     def __init__(self, pieces: List[Piece], board: Board):
         """Initialize the game with pieces, board, and optional event bus."""
         self.board = board
-        self.pieces: Dict[str, Piece] = {p.piece_id: p for p in pieces}
+        # 💡 תיקון: מחיקת שורת הכפילות. self.pieces מוגדר כבר כאן.
+        self.pieces: Dict[str, Piece] = {p.piece_id: p for p in pieces} 
         self.user_input_queue: queue.Queue = queue.Queue()
         self.start_time_ns = time.time_ns()
         self.running = True
         self.selected_piece_id: Optional[str] = None
         self.selected_cell: Optional[Tuple[int, int]] = None
+        # self.pieces: Dict[str, Piece] = {} # ⚠️ שורה זו הייתה כפולה, נמחקה
 
     # ─── helpers ─────────────────────────────────────────────────────────────
     def game_time_ms(self) -> int:
@@ -81,15 +83,15 @@ class Game:
             # (2) handle queued Commands from mouse thread
             while not self.user_input_queue.empty():
                 cmd: Command = self.user_input_queue.get()
-                self._process_input(cmd, now)
+                self._process_input(cmd, now) # כאן מתבצעת הלכידה
 
             # (3) draw current position
             self._draw(now)
             if not self._show():
                 self.running = False
 
-            # (4) detect captures
-            self._resolve_collisions(now)
+            # (4) detect captures - 💡 הסר את הקריאה למתודה הזו מכאן
+            # self._resolve_collisions(now) 
 
             if self._is_win():
                 break
@@ -108,7 +110,6 @@ class Game:
 
         clicked_piece_id = None
         for pid, piece in self.pieces.items():
-            # וודא שהכלי נמצא בתא הנכון ועדיין פעיל על הלוח (אם יש מנגנון להוצאת כלים)
             if piece.get_physics().get_cell() == clicked_cell:
                 clicked_piece_id = pid
                 break
@@ -124,16 +125,10 @@ class Game:
             target_cell = clicked_cell
             piece = self.pieces[self.selected_piece_id]
 
-            # --- התיקון הוא כאן: יצירת רשימת occupied_cells ---
-            # רשימה של כל התאים התפוסים על ידי כלים אחרים (שלנו ושל היריב).
-            # זה הכרחי לבדיקת חסימת המסלול.
-            occupied_cells_for_path_check = [
-                p.get_physics().get_cell()
-                for pid_iter, p in self.pieces.items()
-                if pid_iter != self.selected_piece_id # לא כולל את הכלי הנבחר עצמו
-            ]
-
-            moves = piece.get_moves(occupied_cells_for_path_check) # העבר את הרשימה המתוקנת
+            # 💡 תיקון והתאמה: העברת רשימת כל הכלים ל-get_moves
+            # Piece.get_moves תדאג לבנות את שתי הרשימות (all_occupied, occupied_enemy)
+            # מתוך רשימת כל הכלים.
+            moves = piece.get_moves(list(self.pieces.values()))
             
             if target_cell in moves:
                 cmd = Command(
@@ -152,9 +147,49 @@ class Game:
             self.selected_cell = None
 
 
+    
     def _process_input(self, cmd: Command, now_ms: int):
-        if cmd.piece_id in self.pieces:
-            self.pieces[cmd.piece_id].on_command(cmd, now_ms)
+        if cmd.piece_id not in self.pieces:
+            # הכלי שאמור לזוז אינו קיים (ייתכן שנלכד בתור קודם)
+            return
+
+        piece_moving = self.pieces[cmd.piece_id]
+        
+        if cmd.type == "Move":
+            target_cell = tuple(cmd.params) # התא אליו הכלי רוצה לזוז
+
+            # לפני ביצוע הפקודה, וודא שהתא היעד ריק או מכיל אויב
+            # הלוגיקה הזו כבר נעשית ב-piece.get_moves, אבל זוהי בדיקת בטיחות
+            # והיא המקום הנכון לטפל בלכידה
+            
+            piece_at_target_before_move = None
+            for other_pid, other_piece in self.pieces.items():
+                # וודא שזה לא הכלי שזז ושהתא של הכלי האחר הוא תא היעד
+                if other_pid != piece_moving.piece_id and \
+                   other_piece.get_physics().get_cell() == target_cell:
+                    piece_at_target_before_move = other_piece
+                    break
+            
+            if piece_at_target_before_move:
+                # אם יש כלי בתא היעד
+                if piece_moving.piece_id[1] != piece_at_target_before_move.piece_id[1]:
+                    # זה כלי אויב - לכידה!
+                    print(f"Piece {piece_moving.piece_id} captured {piece_at_target_before_move.piece_id} at {target_cell}!")
+                    del self.pieces[piece_at_target_before_move.piece_id]
+                    # וודא שהכלי הנלכד באמת נמחק מהדיקשנרי.
+                else:
+                    # זה כלי ידידותי - זה לא אמור לקרות אם get_moves עובד נכון
+                    print(f"ERROR: {piece_moving.piece_id} tried to move to {target_cell} which is occupied by friendly piece {piece_at_target_before_move.piece_id}. This indicates a bug in move validation.")
+                    # במקרה כזה, אנו לא רוצים שהכלי יזוז.
+                    return # חשוב: עצור את התנועה!
+
+            # בצע את הפקודה - הכלי זז לתא החדש (אשר עכשיו או ריק או היה בו אויב ונמחק)
+            piece_moving.on_command(cmd, now_ms)
+            
+        else:
+            # אם זה לא פקודת "Move" (לדוגמה, "init")
+            piece_moving.on_command(cmd, now_ms)
+
 
     def _draw(self, now_ms: int):
         """Draw the current game state."""
@@ -171,45 +206,70 @@ class Game:
             return False
         return True
 
-    # ─── capture resolution ────────────────────────────────────────────────
-    def _resolve_collisions(self, now_ms: int):
-        to_remove = set()
-
-        piece_locations: Dict[Tuple[int, int], Piece] = {}
-        for p in self.pieces.values():
-            current_cell = p.get_physics().get_cell()
-            if current_cell in piece_locations:
-                p1 = piece_locations[current_cell]
-                p2 = p
-
-                if p1.piece_id[1] != p2.piece_id[1]:
-                    if p1.get_physics().can_capture() and p2.get_physics().can_be_captured():
-                        print(f"Piece {p1.piece_id} captures {p2.piece_id}!")
-                        to_remove.add(p2.piece_id)
-                    elif p2.get_physics().can_capture() and p1.get_physics().can_be_captured():
-                        print(f"Piece {p2.piece_id} captures {p1.piece_id}!")
-                        to_remove.add(p1.piece_id)
-                else:
-                    pass # Same color pieces on the same cell - typically an invalid game state or a special rule
-            else:
-                piece_locations[current_cell] = p
-
-        for pid in to_remove:
-            if pid in self.pieces:
-                del self.pieces[pid]
-
-
+  
     # ─── board validation & win detection ───────────────────────────────────
     def _is_win(self) -> bool:
-        """Check if the game has ended."""
-        if len(self.pieces) <= 1:
+        """Check if the game has ended based on king capture."""
+        kings_on_board = self._get_all_kings_on_board()
+        
+       
+        # תנאי ניצחון: אם למשחק נשאר מלך אחד בלבד
+        if 'W' not in kings_on_board and 'B' in kings_on_board:
+            # המלך הלבן נאכל, שחור מנצח
             return True
+        elif 'B' not in kings_on_board and 'W' in kings_on_board:
+            # המלך השחור נאכל, לבן מנצח
+            return True
+        elif len(kings_on_board) == 0:
+            # אם אין מלכים בכלל (מצב שגיאה או סיום לא סטנדרטי)
+            print("Warning: No kings found on board. Game ends in draw or error state.")
+            return True # נחשיב כסיום משחק (לרוב תיקו)
+        
+        # אם יש עדיין שני מלכים, המשחק לא הסתיים בגלל לכידת מלך
         return False
 
     def _announce_win(self):
-        """Announce the winner."""
-        if len(self.pieces) == 1:
-            winner = list(self.pieces.values())[0]
-            print(f"Game over! The winner is {winner.piece_id}")
+        """Announce the winner based on remaining kings."""
+        kings_on_board = self._get_all_kings_on_board()
+        
+        white_king_exists = 'W' in kings_on_board
+        black_king_exists = 'B' in kings_on_board
+
+        if not white_king_exists and black_king_exists:
+            print("Game over! Black wins (White King captured)!")
+        elif not black_king_exists and white_king_exists:
+            print("Game over! White wins (Black King captured)!")
+        elif not white_king_exists and not black_king_exists:
+            print("Game over! Both kings captured? It's a draw (or error).")
         else:
-            print("Game over! It's a draw.")
+            # במצב שחמט רגיל, זה יהיה מצב של תיקו (stalemate, insufficient material, etc.)
+            # או שהמשחק פשוט עדיין לא הסתיים (כאשר שני מלכים עדיין קיימים).
+            # בהתאם לחוקי התיקו המורכבים יותר שהזכרנו, זה יכול להיות גם תיקו.
+            print("Game over! It's a draw or an undecided state (both kings still on board).")
+
+# 💡 תיקון: פונקציות העזר האלה שייכות למחלקה Game, והיו מחוץ לה
+    def _get_all_pieces_on_board(self) -> List['Piece']:
+        """מחזירה רשימה של כל אובייקטי הכלים שנמצאים כרגע על הלוח."""
+        return list(self.pieces.values())
+
+    # ⚠️ הערה: פונקציה זו _handle_piece_selection לא נקראת ישירות מתוך run() או _mouse_callback
+    # הלוגיקה שלה שולבה ישירות ב- _mouse_callback
+    # אם היא מיועדת להיות קריאה חיצונית או חלק מממשק אחר, השאר אותה
+    # אחרת, היא מיותרת כעת. אני אשאיר אותה כרגע אבל עם הערה.
+    def _handle_piece_selection(self, selected_piece_id: str):
+        # הלוגיקה של הפונקציה הזו ממומשת כעת בתוך _mouse_callback באופן ישיר.
+        # אם יש לה מטרה נוספת, השאר אותה. אחרת, היא מיותרת.
+        print(f"DEBUG: _handle_piece_selection called for {selected_piece_id}. This function's logic is typically handled by _mouse_callback now.")
+        selected_piece = self.pieces.get(selected_piece_id)
+        if selected_piece:
+            possible_moves = selected_piece.get_moves(self._get_all_pieces_on_board())
+            # ... השתמש ב-possible_moves כדי להציג את האפשרויות על הלוח.
+            # זה כבר מטופל ב-_mouse_callback.
+
+    def _get_all_kings_on_board(self) -> Dict[str, Piece]:
+        """מחזירה מילון של מלכים שנמצאים כרגע על הלוח, ממופים לפי צבעם."""
+        kings = {}
+        for p in self.pieces.values():
+            if p.piece_id[0].upper() == 'K': # 'K' מייצג מלך
+                kings[p.piece_id[1].upper()] = p # שמור מלך לפי צבעו (W/B)
+        return kings

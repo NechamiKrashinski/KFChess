@@ -14,8 +14,7 @@ class Board:
 
     # convenience, not required by dataclass
     def clone(self) -> "Board":
-        new_img = Img()
-        new_img.img = self.img.clone()  # העתקה עמוקה של המטריצה של התמונה
+        new_img = self.img.clone()  # העתקה עמוקה של המטריצה של התמונה
         return Board(
             cell_H_pix=self.cell_H_pix,
             cell_W_pix=self.cell_W_pix,

@@ -1,3 +1,4 @@
+# piece.py
 import cv2
 import numpy as np
 from typing import List, Tuple
@@ -5,8 +6,7 @@ from typing import List, Tuple
 from .board import Board
 from .command import Command
 from .state import State
-# וודא שהייבוא של Moves נכון לפי מבנה הפרויקט שלך
-# from .moves import Moves # או מה שמתאים לך
+from .moves import Moves
 
 class Piece:
     def __init__(self, piece_id: str, init_state: State):
@@ -66,20 +66,37 @@ class Piece:
     def get_physics(self):
         return self._state.get_physics()
 
-    def get_moves(self, occupied_cells: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    def get_moves(self, all_pieces: List['Piece']) -> List[Tuple[int, int]]:
         current_cell = self.get_physics().get_cell()
+        moves_logic = self._state.get_moves() # Assume this returns an instance of Moves
 
-        moves_logic = self._state.get_moves()
+        # 💡 חילוץ סוג הכלי (P, R, N, B, Q, K)
+        piece_type_char = self.piece_id[0].upper() 
+        
+        can_this_piece_jump = (piece_type_char == 'N') # 'N' for Knight (פרש)
+        
+        my_color = self.piece_id[1].upper() # צבע הכלי הנוכחי (W/B)
 
-        # קבע אם הכלי הנוכחי יכול לדלג (מלכה לא יכולה, פרש כן)
-        can_this_piece_jump = (self.piece_id[0].upper() == 'N') # 'N' for Knight (פרש)
+        all_occupied_cells: List[Tuple[int, int]] = []
+        occupied_enemy_cells: List[Tuple[int, int]] = []
+
+        for p in all_pieces:
+            if p.piece_id != self.piece_id: 
+                cell_p = p.get_physics().get_cell()
+                all_occupied_cells.append(cell_p) 
+
+                if p.piece_id[1].upper() != my_color: 
+                    occupied_enemy_cells.append(cell_p) 
 
         valid_moves = moves_logic.get_moves(
             r=current_cell[0],
             c=current_cell[1],
-            occupied_cells=occupied_cells, # רשימת התאים התפוסים מועברת ל-Moves
+            all_occupied_cells=all_occupied_cells,
+            occupied_enemy_cells=occupied_enemy_cells,
             can_jump=can_this_piece_jump,
-            allow_capture=True
+            # 💡 הוספת הפרמטרים החדשים
+            piece_type=piece_type_char, 
+            my_color=my_color
         )
 
         return valid_moves

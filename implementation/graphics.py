@@ -87,3 +87,4 @@ class Graphics:
         Return the current sprite image.
         """
         return self.sprites[self.cur_index]
+

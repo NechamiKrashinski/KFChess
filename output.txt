@@ -1,0 +1,1273 @@
+from dataclasses import dataclass
+
+from .img import Img
+
+@dataclass
+class Board:
+    cell_H_pix: int
+    cell_W_pix: int
+    cell_H_m: int
+    cell_W_m: int
+    W_cells: int
+    H_cells: int
+    img: Img
+
+    # convenience, not required by dataclass
+    def clone(self) -> "Board":
+        new_img = self.img.clone()  # העתקה עמוקה של המטריצה של התמונה
+        return Board(
+            cell_H_pix=self.cell_H_pix,
+            cell_W_pix=self.cell_W_pix,
+            cell_H_m=self.cell_H_m,
+            cell_W_m=self.cell_W_m,
+            W_cells=self.W_cells,
+            H_cells=self.H_cells,
+            img=new_img
+    )
+from dataclasses import dataclass, field
+from typing import List, Dict, Tuple, Optional
+
+@dataclass
+class Command:
+    timestamp: int          # ms since game start
+    piece_id: str
+    type: str               # "Move" | "Jump" | …
+    params: List            # payload (e.g. ["e2", "e4"]) 
+import inspect
+import pathlib
+import queue, threading, time, cv2, math
+from typing import List, Dict, Tuple, Optional
+from .board import Board
+from .command import Command
+from .piece import Piece # וודא ייבוא נכון
+from .img import Img
+
+
+class InvalidBoard(Exception):
+    ...
+# ────────────────────────────────────────────────────────────────────
+class Game:
+    def __init__(self, pieces: List[Piece], board: Board):
+        """Initialize the game with pieces, board, and optional event bus."""
+        self.board = board
+        # 💡 תיקון: מחיקת שורת הכפילות. self.pieces מוגדר כבר כאן.
+        self.pieces: Dict[str, Piece] = {p.piece_id: p for p in pieces} 
+        self.user_input_queue: queue.Queue = queue.Queue()
+        self.start_time_ns = time.time_ns()
+        self.running = True
+        self.selected_piece_id: Optional[str] = None
+        self.selected_cell: Optional[Tuple[int, int]] = None
+        # self.pieces: Dict[str, Piece] = {} # ⚠️ שורה זו הייתה כפולה, נמחקה
+
+    # ─── helpers ─────────────────────────────────────────────────────────────
+    def game_time_ms(self) -> int:
+        """Return the current game time in milliseconds."""
+        return (time.time_ns() - self.start_time_ns) // 1_000_000
+
+    def clone_board(self) -> Board:
+        """
+        Return a **brand-new** Board wrapping a copy of the background pixels
+        so we can paint sprites without touching the pristine board.
+        """
+        return Board(
+            cell_H_pix=self.board.cell_H_pix,
+            cell_W_pix=self.board.cell_W_pix,
+            cell_H_m=self.board.cell_H_m,
+            cell_W_m=self.board.cell_W_m,
+            W_cells=self.board.W_cells,
+            H_cells=self.board.H_cells,
+            img=self.board.img.clone()
+        )
+
+    def start_user_input_thread(self):
+        """Start the user input thread for mouse handling."""
+        thread = threading.Thread(target=self._mouse_handler_loop, daemon=True)
+        thread.start()
+
+    def _mouse_handler_loop(self):
+        """Handle mouse clicks and queue commands in a separate thread."""
+        while self.running:
+            time.sleep(0.01)
+
+    # ─── main public entrypoint ──────────────────────────────────────────────
+    def run(self):
+        """Main game loop."""
+        cv2.imshow("Board", self.board.img.img)
+        cv2.setMouseCallback("Board", self._mouse_callback)
+
+        self.start_user_input_thread()
+
+        start_ms = self.game_time_ms()
+        for p in self.pieces.values():
+            cmd = Command(
+                timestamp=start_ms,
+                piece_id=p.piece_id,
+                type="init",
+                params=p.get_physics().get_pos()
+            )
+            p.on_command(cmd, start_ms)
+
+        # ─────── main loop ──────────────────────────────────────────────────
+        while self.running:
+            now = self.game_time_ms()
+
+            # (1) update physics & animations
+            for p in self.pieces.values():
+                p.update(now)
+
+            # (2) handle queued Commands from mouse thread
+            while not self.user_input_queue.empty():
+                cmd: Command = self.user_input_queue.get()
+                self._process_input(cmd, now)
+
+            # (3) draw current position
+            self._draw(now)
+            if not self._show():
+                self.running = False
+
+            # (4) detect captures
+            self._resolve_collisions(now)
+
+            if self._is_win():
+                break
+
+        self._announce_win()
+        cv2.destroyAllWindows()
+
+    # ─── drawing helpers ────────────────────────────────────────────────────
+    def _mouse_callback(self, event, x, y, flags, param):
+        if event != cv2.EVENT_LBUTTONDOWN:
+            return
+
+        col = x // self.board.cell_W_pix
+        row = y // self.board.cell_H_pix
+        clicked_cell = (col, row)
+
+        clicked_piece_id = None
+        for pid, piece in self.pieces.items():
+            if piece.get_physics().get_cell() == clicked_cell:
+                clicked_piece_id = pid
+                break
+
+        if self.selected_piece_id is None:
+            # קליק ראשון: בחרי כלי
+            if clicked_piece_id:
+                self.selected_piece_id = clicked_piece_id
+                self.selected_cell = clicked_cell
+                print(f"Selected piece {clicked_piece_id} at {clicked_cell}")
+        else:
+            # קליק שני: נסי להזיז ליעד
+            target_cell = clicked_cell
+            piece = self.pieces[self.selected_piece_id]
+
+            # 💡 תיקון והתאמה: העברת רשימת כל הכלים ל-get_moves
+            # Piece.get_moves תדאג לבנות את שתי הרשימות (all_occupied, occupied_enemy)
+            # מתוך רשימת כל הכלים.
+            moves = piece.get_moves(list(self.pieces.values()))
+            
+            if target_cell in moves:
+                cmd = Command(
+                    timestamp=self.game_time_ms(),
+                    piece_id=self.selected_piece_id,
+                    type="Move",
+                    params=list(target_cell)
+                )
+                self.user_input_queue.put(cmd)
+                print(f"Queued move command: {self.selected_piece_id} → {target_cell}")
+            else:
+                print(f"Illegal move for {self.selected_piece_id} → {target_cell}")
+
+            # אפס בחירה תמיד אחרי קליק שני
+            self.selected_piece_id = None
+            self.selected_cell = None
+
+
+    
+    def _process_input(self, cmd: Command, now_ms: int):
+        if cmd.piece_id in self.pieces:
+            piece_moving = self.pieces[cmd.piece_id]
+            current_cell_before_move = piece_moving.get_physics().get_cell()
+            
+            # בצע את הפקודה - הכלי זז לתא החדש
+            piece_moving.on_command(cmd, now_ms)
+            
+            # 💡 הוספה חדשה: בדיקת לכידה מיד לאחר תנועה
+            if cmd.type == "Move":
+                target_cell = tuple(cmd.params) # התא אליו הכלי זז
+                
+                # עכשיו נבדוק אם יש כלי אחר (אויב) בתא היעד
+                # נשתמש במיקום החדש של הכלי המזיז
+                piece_at_target_after_move = None
+                for other_pid, other_piece in self.pieces.items():
+                    if other_pid != piece_moving.piece_id and \
+                       other_piece.get_physics().get_cell() == target_cell:
+                        piece_at_target_after_move = other_piece
+                        break
+                
+                if piece_at_target_after_move:
+                    # וודא שהצבעים שונים
+                    if piece_moving.piece_id[1] != piece_at_target_after_move.piece_id[1]:
+                        # 💡 התרחשה לכידה!
+                        print(f"Piece {piece_moving.piece_id} captured {piece_at_target_after_move.piece_id} at {target_cell}!")
+                        # הסר את הכלי הנלכד מהמפה
+                        del self.pieces[piece_at_target_after_move.piece_id]
+                        # אין צורך להוסיף ל-to_remove ולחכות ל-_resolve_collisions
+                    else:
+                        # 💡 שגיאה: כלי מאותו צבע בתא יעד
+                        print(f"ERROR: {piece_moving.piece_id} tried to move to {target_cell} which is occupied by friendly piece {piece_at_target_after_move.piece_id}. This should not happen if move validation is correct.")
+                        # במידה וזה קרה, אולי צריך לבטל את התנועה או לטפל בשגיאה
+                        # לדוגמה: להחזיר את הכלי למקומו הקודם או להכריז על מהלך לא חוקי.
+                        # כרגע, נשאיר את זה כהודעת שגיאה.
+
+    def _draw(self, now_ms: int):
+        """Draw the current game state."""
+        cloned_board = self.clone_board()
+        for p in self.pieces.values():
+            p.draw_on_board(cloned_board, now_ms)
+        self.current_frame = cloned_board.img.img
+
+    def _show(self) -> bool:
+        """Show the current frame and handle window events."""
+        cv2.imshow("Board", self.current_frame)
+        key = cv2.waitKey(1) & 0xFF
+        if key == 27: # ESC key
+            return False
+        return True
+
+    # ─── capture resolution ────────────────────────────────────────────────
+    def _resolve_collisions(self, now_ms: int):
+        to_remove = set()
+
+        piece_locations: Dict[Tuple[int, int], Piece] = {}
+        for p in self.pieces.values():
+            current_cell = p.get_physics().get_cell()
+            if current_cell in piece_locations:
+                p1 = piece_locations[current_cell]
+                p2 = p
+
+                if p1.piece_id[1] != p2.piece_id[1]:
+                    if p1.get_physics().can_capture() and p2.get_physics().can_be_captured():
+                        print(f"Piece {p1.piece_id} captures {p2.piece_id}!")
+                        to_remove.add(p2.piece_id)
+                    elif p2.get_physics().can_capture() and p1.get_physics().can_be_captured():
+                        print(f"Piece {p2.piece_id} captures {p1.piece_id}!")
+                        to_remove.add(p1.piece_id)
+                else:
+                    # 💡 חשוב: אם כלים מאותו צבע תופסים את אותו תא, זה מצב שגיאה בדרך כלל
+                    # ברוב משחקי השחמט זה לא אמור לקרות. אולי כדאי להוסיף log/error.
+                    print(f"Warning: Two pieces of the same color ({p1.piece_id} and {p2.piece_id}) are in the same cell {current_cell}. This usually indicates an error in game logic.")
+            else:
+                piece_locations[current_cell] = p
+
+        for pid in to_remove:
+            if pid in self.pieces:
+                del self.pieces[pid]
+
+
+    # ─── board validation & win detection ───────────────────────────────────
+    def _is_win(self) -> bool:
+        """Check if the game has ended."""
+        # אם יש רק כלי אחד או פחות, המשחק נגמר (מלך אחרון, או תיקו).
+        if len(self.pieces) <= 1: 
+            return True
+        # עוד בדיקה אפשרית: האם נשאר רק מלך אחד לכל צד? (למקרה של תיקו)
+        # או האם יש מלכים בכלל? (למקרה שהמשחק מתחיל בלי מלכים או שהם נלקחו)
+        # לצרכי שחמט רגיל, צריך לבדוק אם נשאר רק מלך אחד של צבע מסוים.
+        # ניתן להרחיב זאת לפי חוקי השחמט המלאים.
+        
+        # לבינתיים, נניח שהתנאי הנוכחי מספיק (ברגע שנשאר כלי אחד או פחות - נגמר)
+        return False
+
+    def _announce_win(self):
+        """Announce the winner."""
+        # מצא את כל הצבעים שנשארו על הלוח
+        remaining_colors = set(p.piece_id[1].upper() for p in self.pieces.values())
+        
+        if len(remaining_colors) == 1:
+            winner_color = list(remaining_colors)[0]
+            print(f"Game over! The winner is {winner_color}!")
+        elif len(remaining_colors) == 0:
+            print("Game over! No pieces left. It's a draw.")
+        else: # נשארו כלים משני הצבעים או יותר (אם יש יותר משניים)
+            print("Game over! It's a draw or undecided state (more than one player/color still has pieces).")
+        # ניתן להוסיף כאן לוגיקה מורכבת יותר לבדיקת ניצחון בשחמט (לדוגמה, שח מט).
+
+
+# 💡 תיקון: פונקציות העזר האלה שייכות למחלקה Game, והיו מחוץ לה
+    def _get_all_pieces_on_board(self) -> List['Piece']:
+        """מחזירה רשימה של כל אובייקטי הכלים שנמצאים כרגע על הלוח."""
+        return list(self.pieces.values())
+
+    # ⚠️ הערה: פונקציה זו _handle_piece_selection לא נקראת ישירות מתוך run() או _mouse_callback
+    # הלוגיקה שלה שולבה ישירות ב- _mouse_callback
+    # אם היא מיועדת להיות קריאה חיצונית או חלק מממשק אחר, השאר אותה
+    # אחרת, היא מיותרת כעת. אני אשאיר אותה כרגע אבל עם הערה.
+    def _handle_piece_selection(self, selected_piece_id: str):
+        # הלוגיקה של הפונקציה הזו ממומשת כעת בתוך _mouse_callback באופן ישיר.
+        # אם יש לה מטרה נוספת, השאר אותה. אחרת, היא מיותרת.
+        print(f"DEBUG: _handle_piece_selection called for {selected_piece_id}. This function's logic is typically handled by _mouse_callback now.")
+        selected_piece = self.pieces.get(selected_piece_id)
+        if selected_piece:
+            possible_moves = selected_piece.get_moves(self._get_all_pieces_on_board())
+            # ... השתמש ב-possible_moves כדי להציג את האפשרויות על הלוח.
+            # זה כבר מטופל ב-_mouse_callback.
+import pathlib
+import csv
+from typing import List, Dict, Tuple, Optional
+
+from .board import Board
+from .game import Game
+from .piece import Piece
+from .piece_factory import PieceFactory
+from .img import Img
+
+class GameBuilder:
+    """
+    A builder class responsible for constructing a complete Game object
+    from configuration files. It orchestrates the creation of the board
+    and all game pieces using a PieceFactory.
+    """
+    def __init__(self, root_folder: pathlib.Path, 
+                 board_width: int, board_height: int,
+                 cell_width_pix: int, cell_height_pix: int, 
+                 board_image_file: str):
+        """
+        Initialize the builder with all the necessary board and asset data.
+        """
+        self.root_folder = root_folder.resolve()
+        
+        # יוצרים מופע של Img וטוענים את התמונה
+        board_img = Img()
+        board_img_path = self.root_folder / board_image_file
+        board_img.read(board_img_path)
+        expected_board_width_pix = board_width * cell_width_pix
+        expected_board_height_pix = board_height * cell_height_pix
+        board_img.resize(expected_board_width_pix, expected_board_height_pix)
+        # יוצר את אובייקט ה-Board עם כל הפרמטרים הנדרשים
+        cell_width_m = 0.5
+        cell_height_m = 0.5
+        self.board = Board(
+            cell_H_pix=cell_height_pix,
+            cell_W_pix=cell_width_pix,
+            cell_H_m=cell_height_m,
+            cell_W_m=cell_width_m,
+            W_cells=board_width,
+            H_cells=board_height,
+            img=board_img
+        )
+        pieces_root_folder = self.root_folder / "pieces_resources"
+        self.piece_factory = PieceFactory(self.board, pieces_root_folder)
+    
+    def _read_board_layout(self, board_file: pathlib.Path) -> List[Tuple[str, Tuple[int, int]]]:
+        """
+        Read the board layout from a CSV file that represents the board as a grid.
+        
+        Expected format: a grid of piece_type identifiers.
+        """
+        pieces_data = []
+        with open(board_file, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            # עובר על כל שורה ומוצא את סוגי הכלים והמיקומים שלהם
+            for row_index, row in enumerate(reader):
+                for col_index, piece_type in enumerate(row):
+                    piece_type = piece_type.strip()
+                    if piece_type: # מוסיף רק אם יש סוג כלי
+                        pieces_data.append((piece_type, (col_index, row_index)))
+        return pieces_data
+
+    def build_game(self, board_file: str) -> Game:
+        """
+        Build the full game by creating all pieces and a Game instance.
+        """
+        board_path = self.root_folder / board_file
+        if not board_path.exists():
+            raise FileNotFoundError(f"Board file not found at {board_path}")
+
+        pieces_data = self._read_board_layout(board_path)
+        game_pieces: List[Piece] = []
+        
+        piece_prototypes: Dict[str, Piece] = {}
+
+        for piece_type, location in pieces_data:
+            if piece_type not in piece_prototypes:
+                prototype_piece = self.piece_factory.create_piece(piece_type, location)
+                piece_prototypes[piece_type] = prototype_piece
+            
+            piece = self.piece_factory.create_piece(piece_type, location)
+            game_pieces.append(piece)
+
+        game = Game(game_pieces, self.board)
+        
+        return game
+import pathlib
+import time
+import copy
+from typing import Optional, List
+from .command import Command
+from .board import Board
+from .img import Img # Ensure this import is correct
+
+class Graphics:
+    def __init__(self,
+                 sprites_folder: pathlib.Path,
+                 board: Board,
+                 loop: bool = True,
+                 fps: float = 6.0):
+        """
+        Initialize graphics with sprite directory, board, loop setting, and FPS.
+        """
+        self.sprites_folder = sprites_folder
+        self.board = board
+        self.loop = loop
+        self.fps = fps
+
+        self.sprites: list[Img] = []
+        self.cur_index = 0
+        self.last_frame_time: Optional[int] = None
+        self.total_frames = 0
+
+        self._load_sprites()
+
+    def _load_sprites(self):
+        """
+        Load all PNG sprites from the sprites folder, sorted by filename.
+        """
+        files = sorted(self.sprites_folder.glob("*.png"))
+        
+        target_size = (self.board.cell_W_pix, self.board.cell_H_pix)
+
+        for file in files:
+            img = Img()
+            img.read(file, target_size=target_size) # This is where the resize happens now
+            self.sprites.append(img)
+
+        self.total_frames = len(self.sprites)
+        if self.total_frames == 0:
+            raise ValueError(f"No sprites found in: {self.sprites_folder}")
+
+    def copy(self):
+        """
+        Create a deep copy of this Graphics object.
+        """
+        # Note: deepcopy for Img objects within sprites list will call Img.clone()
+        # if you implement __deepcopy__ in Img. Otherwise, it will just copy references.
+        # If Img objects are truly immutable after creation, copying references is fine.
+        # If Img can be modified *after* being loaded into Graphics, then Img.clone()
+        # needs to be properly handled by deepcopy.
+        return copy.deepcopy(self)
+
+    def reset(self, cmd: Command):
+        """ 
+        Reset animation state (start from frame 0).
+        """
+        self.cur_index = 0
+        self.last_frame_time = cmd.timestamp
+
+    def update(self, now_ms: int):
+        """
+        Advance animation frame based on elapsed time.
+        """
+        if self.last_frame_time is None:
+            self.last_frame_time = now_ms
+            return
+
+        elapsed_ms = now_ms - self.last_frame_time
+        frames_to_advance = int(elapsed_ms / (1000 / self.fps))
+
+        if frames_to_advance > 0:
+            self.cur_index += frames_to_advance
+            if self.loop:
+                self.cur_index %= self.total_frames
+            else:
+                self.cur_index = min(self.cur_index, self.total_frames - 1)
+
+            self.last_frame_time = now_ms
+
+    def get_img(self) -> Img:
+        """
+        Return the current sprite image.
+        """
+        return self.sprites[self.cur_index]
+import pathlib
+import json
+from .graphics import Graphics
+from .board import Board
+
+class GraphicsFactory:
+    def __init__(self, board: Board):
+        self.board = board
+
+    def load(self, sprites_dir: pathlib.Path, cfg: dict) -> Graphics:
+        """
+        Loads graphics from a sprites directory using the provided configuration.
+        """
+        if not sprites_dir.is_dir():
+            raise FileNotFoundError(f"Sprites directory not found: {sprites_dir}")
+
+        graphics_cfg = cfg.get("graphics", {})
+        fps = graphics_cfg.get("frames_per_sec", 6)
+        is_loop = graphics_cfg.get("is_loop", False)
+
+        return Graphics(
+            sprites_folder=sprites_dir,
+            board=self.board,
+            loop=is_loop,
+            fps=fps
+        )
+import cv2
+import numpy as np
+import pathlib
+from typing import Optional, Tuple
+
+class Img:
+    def __init__(self):
+        self.img: Optional[np.ndarray] = None
+
+    def read(self, path: pathlib.Path, target_size: Optional[Tuple[int, int]] = None):
+        """
+        Reads an image from a given path and optionally resizes it.
+        :param path: Path to the image file.
+        :param target_size: Optional tuple (width, height) to resize the image to.
+        """
+        if not path.exists():
+            raise FileNotFoundError(f"Image file not found at {path}")
+        self.img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        if self.img is None:
+            raise ValueError(f"Could not read image from {path}. Check file format or corruption.")
+        
+        # Ensure image has an alpha channel for transparency
+        if self.img.shape[2] == 3: # If BGR, convert to BGRA
+            self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2BGRA)
+        elif self.img.shape[2] == 4: # Already BGRA
+            pass
+        else:
+            # Handle cases like grayscale or other channel counts if necessary, 
+            # or raise an error for unsupported formats.
+            raise ValueError(f"Unsupported image channel count: {self.img.shape[2]}")
+
+        if target_size:
+            self.resize(target_size[0], target_size[1])
+
+    def clone(self):
+        """Creates a deep copy of the Img object."""
+        new_img_obj = Img()
+        if self.img is not None:
+            new_img_obj.img = self.img.copy()
+        return new_img_obj
+
+    def draw_on(self, other_img: 'Img', x: int, y: int, alpha: float = 1.0):
+        """Draws this image onto another Img object at specified coordinates with alpha blending."""
+        if self.img is None or other_img.img is None:
+            return
+
+        h_src, w_src, _ = self.img.shape  # Source image dimensions
+        h_dst, w_dst, _ = other_img.img.shape # Destination image dimensions
+
+        # Calculate the intersection rectangle in destination coordinates
+        # These are the coordinates on the *destination* image where we will draw
+        x_dst_start = max(0, x)
+        y_dst_start = max(0, y)
+        x_dst_end = min(w_dst, x + w_src)
+        y_dst_end = min(h_dst, y + h_src)
+
+        # Calculate the corresponding coordinates in source image
+        # These are the coordinates on the *source* image from which we will read
+        x_src_start = x_dst_start - x
+        y_src_start = y_dst_start - y
+        x_src_end = x_src_start + (x_dst_end - x_dst_start)
+        y_src_end = y_src_start + (y_dst_end - y_dst_start)
+        # הוסף את השורות הבאות כדי לראות את אזורי החיתוך המחושבים:
+        # print(f"DEBUG: Dst Clip: ({x_dst_start},{y_dst_start}) to ({x_dst_end},{y_dst_end})")
+        # print(f"DEBUG: Src Clip: ({x_src_start},{y_src_start}) to ({x_src_end},{y_src_end})")
+
+        # Ensure we have a valid region to draw (width and height must be positive)
+        if x_dst_start >= x_dst_end or y_dst_start >= y_dst_end:
+            # print(f"DEBUG: No valid drawing region for draw_on at ({x}, {y}). "
+            #   f"Src size: ({w_src}x{h_src}). Dst size: ({w_dst}x{h_dst}). "
+            #   f"Dst Clip: ({x_dst_start},{y_dst_start})-({x_dst_end},{y_dst_end}). "
+            #   f"Src Clip: ({x_src_start},{y_src_start})-({x_src_end},{y_src_end})")
+            return
+
+        # Get the region of interest (ROI) on the destination image
+        roi_dst = other_img.img[y_dst_start:y_dst_end, x_dst_start:x_dst_end]
+        
+        # Get the corresponding region from the source image
+        roi_src = self.img[y_src_start:y_src_end, x_src_start:x_src_end]
+
+        # Alpha blending
+        # Extract alpha channel from the source ROI and normalize to 0-1
+        alpha_src_channel = roi_src[:, :, 3] / 255.0
+        # Apply the global alpha multiplier
+        alpha_src_blended = alpha_src_channel * alpha
+        # Calculate the inverse alpha for the background
+        alpha_dst_blended = 1.0 - alpha_src_blended
+
+        # Perform alpha blending for each color channel (B, G, R)
+        for c in range(0, 3): # Iterate over B, G, R channels
+            roi_dst[:, :, c] = (alpha_src_blended * roi_src[:, :, c] +
+                                alpha_dst_blended * roi_dst[:, :, c])
+            
+        # Optional: update the alpha channel of the destination if needed for subsequent blending
+        # For a simple game board, this might not be necessary if the board is always opaque.
+        # If the board can have transparent areas and you want the piece's transparency to affect it:
+        # roi_dst[:, :, 3] = (alpha_src_channel * roi_src[:, :, 3] + (1 - alpha_src_channel) * roi_dst[:, :, 3]).astype(np.uint8)
+
+    def resize(self, new_width: int, new_height: int):
+        """Resizes the image to the specified new_width and new_height."""
+        if self.img is None:
+            # It's better to raise an error here if resize is expected to always have an image
+            raise ValueError("Cannot resize empty image. 'img' attribute is None.")
+        
+        current_height, current_width = self.img.shape[:2]
+        if new_width == current_width and new_height == current_height:
+            return # No resize needed
+
+        # Using INTER_AREA for downsampling (shrinking) and INTER_LINEAR/CUBIC for upsampling (enlarging).
+        interpolation = cv2.INTER_AREA if (new_width < current_width or new_height < current_height) else cv2.INTER_LINEAR
+        self.img = cv2.resize(self.img, (new_width, new_height), interpolation=interpolation)
+# moves.py
+import pathlib
+from typing import List, Tuple
+
+class Moves:
+    def __init__(self, moves_txt_path: pathlib.Path, dims: Tuple[int, int]):
+        self.dims = dims
+        self.moves_all: List[Tuple[int, int, str]] = []
+
+        with open(moves_txt_path, 'r') as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+
+                if ":" in stripped:
+                    coord_part, move_type = stripped.split(":")
+                else:
+                    coord_part, move_type = stripped, "normal"
+
+                parts = coord_part.split(',')
+                if len(parts) != 2:
+                    raise ValueError(f"Invalid move line (expected 'dx,dy[:desc]'): '{stripped}'")
+
+                try:
+                    dx = int(parts[0])
+                    dy = int(parts[1])
+                    self.moves_all.append((dx, dy, move_type.strip())) # 💡 וודא ש-move_type נקי מרווחים
+                except ValueError:
+                    raise ValueError(f"Invalid integers in move line: '{stripped}'")
+
+    def get_moves(self,
+                  r: int,
+                  c: int,
+                  # 💡 שינוי: קבלת שתי רשימות נפרדות
+                  all_occupied_cells: List[Tuple[int, int]],
+                  occupied_enemy_cells: List[Tuple[int, int]],
+                  can_jump: bool = False
+                  ) -> List[Tuple[int, int]]:
+
+        rows, cols = self.dims
+        valid = []
+
+        for dx, dy, move_type in self.moves_all:
+            nr, nc = r + dx, c + dy
+            target_cell = (nr, nc)
+
+            # 1. בדיקת גבולות הלוח
+            if not (0 <= nr < rows and 0 <= nc < cols):
+                continue
+
+            # 💡 בדיקה האם התא יעד תפוס על ידי *כל* כלי
+            is_target_occupied_by_any_piece = target_cell in all_occupied_cells
+            # 💡 בדיקה האם התא יעד תפוס על ידי *אויב*
+            is_target_occupied_by_enemy = target_cell in occupied_enemy_cells
+
+            # 2. בדיקת חסימה בדרך – רק אם הכלי לא יכול לקפוץ וזו תנועה ישרה.
+            # 💡 חשוב: בדיקת חסימת הנתיב חייבת להשתמש ב-all_occupied_cells
+            if not can_jump and self._is_straight_move(dx, dy):
+                if self._is_path_blocked((r, c), target_cell, all_occupied_cells):
+                    continue
+            
+            # --- הלוגיקה המעודכנת לטיפול בסוגי תנועה ובתאים תפוסים ---
+            if move_type == "normal": # עבור רוב הכלים (מלכה, צריח, רץ)
+                if is_target_occupied_by_any_piece:
+                    # אם התא תפוס על ידי כלי כלשהו (ידיד או אויב)
+                    if is_target_occupied_by_enemy: # אם זה כלי אויב
+                        valid.append(target_cell) # לכידה חוקית
+                    else: # אם זה כלי ידידותי
+                        continue # לא ניתן לזוז לתא תפוס על ידי כלי ידידותי
+                else: # אם התא ריק
+                    valid.append(target_cell) # תנועה חוקית
+
+            elif move_type == "non_capture": # לדוגמה, חייל קדימה
+                if is_target_occupied_by_any_piece: # אם התא תפוס על ידי כל כלי
+                    continue  # חייל בתנועה ישרה לא יכול לזוז לתא תפוס
+                valid.append(target_cell)
+            
+            elif move_type == "capture": # לדוגמה, חייל באלכסון
+                if not is_target_occupied_by_enemy: # חייב להיות תא תפוס על ידי *אויב*
+                    continue  # לא יכול ללכוד תא ריק או תא של ידיד
+                valid.append(target_cell) # לכידה חוקית של כלי אויב
+
+            elif move_type == "1st": # לדוגמה, חייל קדימה 2 בתור ראשון
+                if is_target_occupied_by_any_piece: # אם התא תפוס על ידי כל כלי
+                    continue  # חייל בתנועה ראשונה לא יכול לזוז לתא תפוס
+                valid.append(target_cell)
+
+            # ... הוסף כאן סוגי תנועה נוספים אם יש לך
+
+        return valid
+
+    def _is_straight_move(self, dx: int, dy: int) -> bool:
+        """Determines if a move (dx, dy) represents a straight line (horizontal, vertical, or diagonal)."""
+        return dx == 0 or dy == 0 or abs(dx) == abs(dy)
+
+    def _is_path_blocked(self,
+                          start_cell: Tuple[int, int],
+                          end_cell: Tuple[int, int],
+                          # 💡 occupied_cells כעת מקבל את רשימת *כל* התאים התפוסים
+                          occupied_cells: List[Tuple[int, int]]) -> bool:
+        print(f"DEBUG: Checking path from {start_cell} to {end_cell}")
+        print(f"DEBUG: Occupied cells: {occupied_cells}")
+            
+        start_row, start_col = start_cell
+        end_row, end_col = end_cell
+
+        delta_row = end_row - start_row
+        delta_col = end_col - start_col
+
+        step_row = 0
+        if delta_row > 0:
+            step_row = 1
+        elif delta_row < 0:
+            step_row = -1
+
+        step_col = 0
+        if delta_col > 0:
+            step_col = 1
+        elif delta_col < 0:
+            step_col = -1
+
+        steps = max(abs(delta_row), abs(delta_col))
+
+        for i in range(1, steps):
+            intermediate_row = start_row + i * step_row
+            intermediate_col = start_col + i * step_col
+            intermediate_cell = (intermediate_row, intermediate_col)
+            print(f"DEBUG: Checking intermediate cell: {intermediate_cell}")
+
+            # בדיקה אם התא הביניים נמצא ברשימת *כל* התאים התפוסים
+            if intermediate_cell in occupied_cells:
+                print(f"DEBUG: Path BLOCKED at {intermediate_cell}")
+                return True
+        print(f"DEBUG: Path CLEAR")
+        return False
+from typing import Tuple, Optional
+from .command import Command
+from .board import Board
+
+
+class Physics:
+    def __init__(self, start_cell: Tuple[int, int],
+                 board: Board, speed_m_s: float = 1.0):
+        self.board = board
+        self.speed = speed_m_s
+        self.start_cell = start_cell # תא ההתחלה של הכלי
+        self.cmd: Optional[Command] = None
+        self.start_time_ms: Optional[int] = None
+        self.cur_pos_m: Tuple[float, float] = (
+            start_cell[0] * board.cell_W_m, # פינה שמאלית
+            start_cell[1] * board.cell_H_m  # פינה עליונה
+        )
+        self.target_cell: Tuple[int, int] = start_cell
+
+
+    def reset(self, cmd: Command):
+        self.cmd = cmd
+        self.start_time_ms = cmd.timestamp
+
+    def update(self, now_ms: int) -> Command:
+        return self.cmd
+
+    def can_be_captured(self) -> bool:
+        """ברירת מחדל: כלי במנוחה יכול להילכד."""
+        return True
+
+    def can_capture(self) -> bool:
+        """ברירת מחדל: כלי במנוחה אינו יכול ללכוד."""
+        return False
+
+    def get_pos(self) -> Tuple[float, float]:
+        return self.cur_pos_m
+
+    def get_cell(self) -> Tuple[int, int]:
+        """מחזירה את התא הנוכחי שבו הכלי נמצא."""
+        # חישוב תא הלוח מתוך הקואורדינטות המטריות
+        col = int(self.cur_pos_m[0] / self.board.cell_W_m)
+        row = int(self.cur_pos_m[1] / self.board.cell_H_m)
+        return (col, row)
+
+    def create_movement_to(self, target_cell: Tuple[int, int], speed: float = 1.0) -> 'Physics':
+        """
+        מחזיר מופע חדש של MovePhysics שיזוז מהתא הנוכחי ל־target_cell.
+        """
+        move = MovePhysics(start_cell=self.get_cell(), board=self.board, speed_m_s=speed)
+        move.end_cell = target_cell
+        return move
+
+class IdlePhysics(Physics):
+    def update(self, now_ms: int) -> Command:
+        return self.cmd
+
+
+class MovePhysics(Physics):
+    def __init__(self, start_cell: Tuple[int, int],
+                 board: Board, speed_m_s: float = 1.0):
+        super().__init__(start_cell, board, speed_m_s)
+        self.end_cell: Tuple[int, int] = start_cell
+        self.vector_m: Tuple[float, float] = (0.0, 0.0)
+        self.duration_s: float = 0.0
+
+    def reset(self, cmd: Command):
+        super().reset(cmd)
+        if cmd.type != "Move" or len(cmd.params) != 2:
+            raise ValueError("Invalid command for MovePhysics")
+
+        self.start_cell = self.get_cell() # קבע את תא ההתחלה האמיתי לפני תחילת התנועה
+        self.end_cell = tuple(cmd.params)
+        
+        # חישוב וקטור התנועה ביחידות מטר
+        dx = (self.end_cell[0] - self.start_cell[0]) * self.board.cell_W_m
+        dy = (self.end_cell[1] - self.start_cell[1]) * self.board.cell_H_m
+        self.vector_m = (dx, dy)
+        
+        distance = (dx ** 2 + dy ** 2) ** 0.5
+        self.duration_s = distance / self.speed if self.speed > 0 else float("inf")
+
+    def update(self, now_ms: int) -> Command:
+        if self.start_time_ms is None:
+            return self.cmd
+
+        elapsed_s = (now_ms - self.start_time_ms) / 1000.0
+        
+        # 1. בדוק אם התנועה הסתיימה
+        if elapsed_s >= self.duration_s:
+            # הגדר את המיקום הסופי וסיים את התנועה
+            self.cur_pos_m = (
+                self.end_cell[0] * self.board.cell_W_m,
+                self.end_cell[1] * self.board.cell_H_m
+            )
+            self.start_cell = self.end_cell
+            # אולי תחזור למצב Idle כאן, או תמשיך לטפל בפקודה
+            # כדי למנוע קריאה נוספת ל-MovePhysics עבור תנועה שהסתיימה
+            # במקום להחזיר self.cmd, נרצה אולי להחזיר את הפקודה המקורית שקיבלה הפיזיקה
+            # זה יכול להיות מורכב יותר, אז נתמקד בתיקון ה-ratio כרגע.
+            
+            # אם אין פה שימוש ב-ratio, אז אין צורך להגדיר אותו.
+            # אבל אולי אתה רוצה לטפל במקרה של תנועה שהסתיימה על ידי מעבר למצב פיזיקה אחר (IdlePhysics)?
+            # נניח בינתיים שזה בסדר להחזיר את ה-cmd הנוכחי.
+            return self.cmd # התנועה הסתיימה, לא צריך לחשב ratio
+
+        # 2. אם התנועה עדיין בעיצומה, חשב את ratio
+        # המקרה שבו התנועה עדיין מתבצעת
+        if self.duration_s > 0: # וודא שאין חלוקה באפס
+            ratio = elapsed_s / self.duration_s
+        else: # אם duration_s הוא 0 (תנועה מיידית או משהו כזה)
+            ratio = 1.0 # או כל ערך אחר הגיוני למצב מיידי
+
+        # חשב את המיקום המבוסס על אינטרפולציה
+        self.cur_pos_m = (
+            self.start_cell[0] * self.board.cell_W_m + self.vector_m[0] * ratio,
+            self.start_cell[1] * self.board.cell_H_m + self.vector_m[1] * ratio
+        )
+        return self.cmd
+
+    def can_be_captured(self) -> bool:
+        """כלי בתנועה לא אמור להילכד באמצע המהלך."""
+        return False
+
+    def can_capture(self) -> bool:
+        """כלי בתנועה *כן* יכול ללכוד בסיום התנועה שלו."""
+        return True
+    
+    
+
+
+from .board import Board
+from .physics import Physics, IdlePhysics, MovePhysics
+from typing import Tuple
+
+class PhysicsFactory:
+    def __init__(self, board: Board):
+        self.board = board
+
+    def create(self, start_cell: Tuple[int, int], cfg: dict) -> Physics:
+        """
+        Create a physics object based on the given configuration.
+        """
+        physics_cfg = cfg.get("physics", {})
+        speed_m_s = physics_cfg.get("speed_m_per_sec", 0.0)
+        
+        # יוצר אובייקט Physics מתאים בהתבסס על מהירות
+        if speed_m_s > 0:
+            return MovePhysics(start_cell=start_cell, board=self.board, speed_m_s=speed_m_s)
+        else:
+            return IdlePhysics(start_cell=start_cell, board=self.board)
+# piece.py
+import cv2
+import numpy as np
+from typing import List, Tuple
+
+from .board import Board
+from .command import Command
+from .state import State
+# וודא שהייבוא של Moves נכון לפי מבנה הפרויקט שלך
+from .moves import Moves # 💡 ייבוא Moves
+
+class Piece:
+    def __init__(self, piece_id: str, init_state: State):
+        self.piece_id = piece_id
+        self._state = init_state
+        self._last_command_time = 0
+
+    def on_command(self, cmd: Command, now_ms: int):
+        if self.is_command_possible(cmd, now_ms):
+            self._state = self._state.process_command(cmd, now_ms)
+            self._last_command_time = now_ms
+
+    def is_command_possible(self, cmd: Command, now_ms: int) -> bool:
+        return self._state.can_transition(now_ms)
+
+    def reset(self, start_ms: int):
+        self._last_command_time = start_ms
+        cmd = self._state.get_command()
+        if cmd:
+            self._state.reset(cmd)
+
+    def update(self, now_ms: int):
+        self._state = self._state.update(now_ms)
+
+    def draw_on_board(self, board: Board, now_ms: int):
+        self.update(now_ms)
+
+        piece_img_obj = self._state.get_graphics().get_img()
+        piece_img = piece_img_obj.img
+
+        pos_x_m, pos_y_m = self._state.get_physics().get_pos()
+
+        board_x_pix = int(pos_x_m / board.cell_W_m * board.cell_W_pix)
+        board_y_pix = int(pos_y_m / board.cell_H_m * board.cell_H_pix)
+
+        h_piece, w_piece, _ = piece_img.shape
+
+        board_width_pix = board.W_cells * board.cell_W_pix
+        board_height_pix = board.H_cells * board.cell_H_pix
+
+        draw_x = max(0, min(board_x_pix, board_width_pix - w_piece))
+        draw_y = max(0, min(board_y_pix, board_height_pix - h_piece))
+
+        if board_x_pix < 0 or board_y_pix < 0 or \
+           board_x_pix + w_piece > board_width_pix or \
+           board_y_pix + h_piece > board_height_pix:
+            print(f"Warning: Piece drawing for {self.piece_id} at ({board_x_pix}, {board_y_pix}) exceeds board dimensions.")
+
+        piece_img_obj.draw_on(other_img=board.img, x=draw_x, y=draw_y)
+
+        if not self._state.can_transition(now_ms):
+            cooldown_img = piece_img_obj.clone()
+            h, w, _ = cooldown_img.img.shape
+            cv2.rectangle(cooldown_img.img, (0, 0), (w, h), (0, 0, 255), -1)
+            cooldown_img.draw_on(other_img=board.img, x=draw_x, y=draw_y, alpha=0.4)
+
+    def get_physics(self):
+        return self._state.get_physics()
+
+    # 💡 שינוי: קבלת רשימה של *כל* אובייקטי הכלים (לא רק תאים תפוסים)
+    def get_moves(self, all_pieces: List['Piece']) -> List[Tuple[int, int]]:
+        current_cell = self.get_physics().get_cell()
+        moves_logic = self._state.get_moves() # Assume this returns an instance of Moves
+
+        can_this_piece_jump = (self.piece_id[0].upper() == 'N') # 'N' for Knight (פרש)
+        
+        my_color = self.piece_id[1].upper() # צבע הכלי הנוכחי (W/B)
+
+        # 💡 בניית שתי רשימות נפרדות
+        all_occupied_cells: List[Tuple[int, int]] = []
+        occupied_enemy_cells: List[Tuple[int, int]] = []
+
+        for p in all_pieces:
+            # וודא שהכלי לא נמצא בדיוק בתא ההתחלה של הכלי שמוזז (רק אם אנחנו מזיזים אותו)
+            if p.piece_id != self.piece_id: # אל תכלול את הכלי הנבחר עצמו
+                cell_p = p.get_physics().get_cell()
+                all_occupied_cells.append(cell_p) # תמיד נוסיף את התא הזה לרשימת כל התפוסים
+
+                if p.piece_id[1].upper() != my_color: # אם זה כלי של יריב
+                    occupied_enemy_cells.append(cell_p) # נוסיף לרשימת תאי האויב
+
+        valid_moves = moves_logic.get_moves(
+            r=current_cell[0],
+            c=current_cell[1],
+            all_occupied_cells=all_occupied_cells,      # רשימת כל התאים התפוסים
+            occupied_enemy_cells=occupied_enemy_cells,  # רשימת תאי האויב התפוסים בלבד
+            can_jump=can_this_piece_jump
+        )
+
+        return valid_moves
+import pathlib
+from typing import Dict, Tuple, List
+import json
+import copy
+
+from .board import Board
+from .graphics_factory import GraphicsFactory
+from .moves import Moves
+from .physics_factory import PhysicsFactory
+from .piece import Piece
+from .state import State
+
+
+class PieceFactory:
+    def __init__(self, board: Board, pieces_root: pathlib.Path):
+        self.board = board
+        self.pieces_root = pieces_root
+        self.moves_lib: Dict[str, Moves] = {}
+        self.state_machines: Dict[str, State] = {}
+        self.graphics_factory = GraphicsFactory(board=self.board) # העבר את הלוח
+        self.physics_factory = PhysicsFactory(board=self.board)
+        self._load_piece_templates()
+
+    def _load_piece_templates(self):
+        """
+        Loads all piece configurations and state machines from the pieces directory.
+        """
+        for piece_dir in self.pieces_root.iterdir():
+            if not piece_dir.is_dir():
+                continue
+
+            piece_type = piece_dir.name
+            main_cfg_path = piece_dir / "config.json"
+            
+            if not main_cfg_path.exists():
+                print(f"Warning: No config.json found for piece '{piece_type}'. Skipping.")
+                continue
+
+            with open(main_cfg_path, 'r') as f:
+                main_cfg = json.load(f)
+
+            # 1. Load moves based on the main config file
+            moves_file = main_cfg.get("moves")
+            if moves_file:
+                moves_path = piece_dir / moves_file
+                if moves_path.exists():
+                    self.moves_lib[piece_type] = Moves(
+                        moves_txt_path=moves_path,
+                        dims=(self.board.H_cells, self.board.W_cells)
+                    )
+                else:
+                    print(f"Warning: Moves file not found for piece '{piece_type}' at {moves_path}")
+            
+            # 2. Build the state machine for the piece
+            initial_state_name = main_cfg.get("initial_state")
+            state_names = main_cfg.get("states", [])
+            
+            if initial_state_name and state_names:
+                state_machine = self._build_state_machine(
+                    piece_dir=piece_dir,
+                    piece_type=piece_type,
+                    initial_state_name=initial_state_name,
+                    state_names=state_names
+                )
+                if state_machine:
+                    self.state_machines[piece_type] = state_machine
+
+    def _build_state_machine(self,
+                             piece_dir: pathlib.Path,
+                             piece_type: str,
+                             initial_state_name: str,
+                             state_names: List[str]) -> State:
+        """
+        Builds a state machine for a piece from its directory.
+        """
+        states_dir = piece_dir / "states"
+        state_objects: Dict[str, State] = {}
+        
+        # Stage 1: Create all State objects
+        for state_name in state_names:
+            state_cfg_path = states_dir / state_name / "config.json"
+            if not state_cfg_path.exists():
+                raise FileNotFoundError(f"Config file not found for state '{state_name}': {state_cfg_path}")
+            
+            with open(state_cfg_path, 'r') as f:
+                cfg = json.load(f)
+
+            graphics = self.graphics_factory.load(
+                sprites_dir=states_dir / state_name / "sprites",
+                cfg=cfg
+            )
+            # Create a placeholder physics object. The real position is set in create_piece.
+            physics = self.physics_factory.create(
+                start_cell=(0, 0),
+                cfg=cfg
+            )
+
+            state_objects[state_name] = State(
+                moves=self.moves_lib[piece_type],
+                graphics=graphics,
+                physics=physics
+            )
+            # print(f"[DEBUG] Created state '{state_name}' for piece '{piece_type}' with graphics and physics.")
+
+        # Stage 2: Link the states based on config
+        for state_name, state_obj in state_objects.items():
+            state_cfg_path = states_dir / state_name / "config.json"
+            with open(state_cfg_path, 'r') as f:
+                cfg = json.load(f)
+            
+            next_state_name = cfg.get("physics", {}).get("next_state_when_finished")
+            if next_state_name and next_state_name in state_objects:
+                current_state_obj = state_objects[state_name]
+                next_state_obj = state_objects[next_state_name]
+                
+                # Use the command_type from the physics config as the event
+                command_type = cfg.get("physics", {}).get("command_type", next_state_name)
+                current_state_obj.set_transition(
+                    event=command_type,
+                    target=next_state_obj
+                )
+        
+        return state_objects.get(initial_state_name)
+
+    def create_piece(self, p_type: str, cell: Tuple[int, int]) -> Piece:
+        """
+        Create a piece of the specified type at the given cell.
+        """
+        if p_type not in self.state_machines:
+            raise ValueError(f"Piece type '{p_type}' not found.")
+
+        # Create a deep copy of the state machine template
+        initial_state = copy.deepcopy(self.state_machines[p_type])
+        
+        # Update the initial position on the physics object of the copied state
+        initial_physics = initial_state.get_physics()
+        # print(f"Type of initial_physics: {type(initial_physics)}")
+
+        initial_physics.cur_pos_m = (
+            cell[0] * self.board.cell_W_m,
+            cell[1] * self.board.cell_H_m
+        )
+        
+        return Piece(
+            piece_id=f"{p_type}_{cell[0]}_{cell[1]}",
+            init_state=initial_state
+        )
+import cmd
+from typing import Dict, Optional
+from .command import Command
+from .moves import Moves
+from .graphics import Graphics
+from .physics import Physics
+
+
+class State:
+    def __init__(self, moves: Moves, graphics: Graphics, physics: Physics):
+        """
+        אתחול מחלקת מצב עם המודולים החשובים:
+        - moves: ניהול תנועות הלוח
+        - graphics: ניהול גרפיקה ועדכונים ויזואליים
+        - physics: ניהול פיזיקה, תזמון, ופקודות משתמש
+        """
+        self._graphics = graphics
+        self._physics = physics
+        self._moves = moves
+        self._transitions: Dict[str, 'State'] = {}  # מיפוי אירוע -> מצב הבא
+        self._current_command: Optional[Command] = None  # הפקודה שהובילה למצב הנוכחי
+
+    def set_transition(self, event: str, target: 'State'):
+        """
+        הגדרת מעבר בין מצבים: בעת אירוע מסוים נעבור למצב אחר.
+        :param event: סוג הפקודה או האירוע (string)
+        :param target: אובייקט State שאליו נעבור
+        """
+        self._transitions[event] = target
+
+    def reset(self, cmd: Command):
+        """
+        אתחול המצב עם פקודה חדשה (לדוגמה תחילת תור).
+        מאפס את המודולים הגרפיים והפיזיקליים.
+        שומר את הפקודה כפקודה נוכחית.
+        """
+        self._current_command = cmd
+        self._graphics.reset(cmd=cmd)
+        self._physics.reset(cmd=cmd)
+
+    def update(self, now_ms: int) -> 'State':
+        """
+        עדכון מצב בזמן אמת (time step).
+        מבצע עדכון גרפי ופיזיקלי.
+        אם מתקבלת פקודה חדשה מהפיזיקה - מעבד אותה ועובר למצב הבא.
+        אם לא, נשאר במצב הנוכחי.
+        """
+        self._graphics.update(now_ms)
+        cmd = self._physics.update(now_ms)
+
+        if cmd is not None:
+            return self.process_command(cmd, now_ms)
+
+        return self
+
+    # def process_command(self, cmd: Command, now_ms: int) -> 'State':
+    #     """
+    #     עיבוד פקודה - אם קיימת הגדרת מעבר למצב אחר לפי סוג הפקודה,
+    #     מבצע מעבר, אחרת נשאר באותו מצב.
+    #     """
+    #     self._current_command = cmd
+    #     next_state = self._transitions.get(cmd.type)
+
+    #     if next_state is None:
+    #         return self  # אין מעבר תקף, נשאר באותו מצב
+
+    #     next_state.reset(cmd)
+    #     return next_state
+    def process_command(self, cmd: Command, now_ms: int) -> 'State':
+        self._current_command = cmd
+
+        if cmd.type == "Move":
+            new_physics = self._physics.create_movement_to(tuple(cmd.params))
+            new_state = State(
+                moves=self._moves,
+                graphics=self._graphics,
+                physics=new_physics
+            )
+            new_state.reset(cmd)
+            return new_state
+
+        next_state = self._transitions.get(cmd.type)
+        if next_state is None:
+            return self
+        next_state.reset(cmd)
+        return next_state
+
+
+
+    def can_transition(self, now_ms: int) -> bool:
+        """
+        פונקציה שניתן להרחיב לפי הצורך לבדוק האם ניתן לעבור למצב הבא,
+        למשל על פי תזמון או תנאי מערכת.
+        כברירת מחדל מחזירה True.
+        """
+        return True
+
+    def get_command(self) -> Optional[Command]:
+        """
+        מחזירה את הפקודה שהובילה למצב הנוכחי,
+        או None אם לא קיימת כזו.
+        """
+        return self._current_command
+
+    def get_graphics(self): return self._graphics
+    def get_physics(self): return self._physics
+
+
+    def get_moves(self) -> Moves:
+        return self._moves
+
+
