@@ -79,7 +79,7 @@ class Piece:
             c=current_cell[1],
             occupied_cells=occupied_cells, # רשימת התאים התפוסים מועברת ל-Moves
             can_jump=can_this_piece_jump,
-            allow_capture=False
+            allow_capture=True
         )
 
         return valid_moves

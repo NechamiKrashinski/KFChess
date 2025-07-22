@@ -100,7 +100,7 @@ class PieceFactory:
                 graphics=graphics,
                 physics=physics
             )
-            print(f"[DEBUG] Created state '{state_name}' for piece '{piece_type}' with graphics and physics.")
+            # print(f"[DEBUG] Created state '{state_name}' for piece '{piece_type}' with graphics and physics.")
 
         # Stage 2: Link the states based on config
         for state_name, state_obj in state_objects.items():
@@ -134,7 +134,7 @@ class PieceFactory:
         
         # Update the initial position on the physics object of the copied state
         initial_physics = initial_state.get_physics()
-        print(f"Type of initial_physics: {type(initial_physics)}")
+        # print(f"Type of initial_physics: {type(initial_physics)}")
 
         initial_physics.cur_pos_m = (
             cell[0] * self.board.cell_W_m,

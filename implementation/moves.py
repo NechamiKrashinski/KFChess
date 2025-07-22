@@ -29,14 +29,15 @@ class Moves:
                     raise ValueError(f"Invalid integers in move line: '{stripped}'")
 
     def get_moves(self,
-                  r: int,
-                  c: int,
-                  occupied_cells: List[Tuple[int, int]],
-                  can_jump: bool = False,
-                  allow_capture: bool = False) -> List[Tuple[int, int]]:
+              r: int,
+              c: int,
+              occupied_cells: List[Tuple[int, int]],
+              can_jump: bool = False,
+              allow_capture: bool = False) -> List[Tuple[int, int]]:
 
         rows, cols = self.dims
         valid = []
+
         for dx, dy, move_type in self.moves_all:
             nr, nc = r + dx, c + dy
             target_cell = (nr, nc)
@@ -45,27 +46,38 @@ class Moves:
             if not (0 <= nr < rows and 0 <= nc < cols):
                 continue
 
-            # 2. בדיקת תא היעד תפוס/ריק בהתאם לסוג המהלך (רגיל/לכידה)
             is_target_occupied = target_cell in occupied_cells
 
-            if move_type == "normal":
-                if is_target_occupied:
-                    continue # תנועה רגילה לא יכולה להיות לתא תפוס
-            elif move_type == "capture":
-                if not is_target_occupied:
-                    continue # לכידה חייבת להיות לתא תפוס (למעט לכידת "אוויר" אם רלוונטי)
+            # 2. האם מדובר בחייל? (move_type מוגדר לפי קובץ החיילים)
+            is_pawn = move_type in ("non_capture", "capture", "1st")
 
-            # 3. בדיקת דילוג מעל כלים (רק לכלים שאינם יכולים לדלג ולתנועה בקו ישר)
+            if is_pawn:
+                if move_type == "non_capture":
+                    if is_target_occupied:
+                        continue  # לא יכול לזוז לתא תפוס
+                elif move_type == "capture":
+                    if not allow_capture or not is_target_occupied:
+                        continue  # חייב להיות תא תפוס והרשאה ללכוד
+                elif move_type == "1st":
+                    if is_target_occupied:
+                        continue  # תנועה קדמית בתחילת המשחק – רק אם פנוי
+                else:
+                    continue  # move_type לא מוכר
+
+            else:
+                # כלי רגיל: תמיד יכול לאכול תא תפוס
+                # אין צורך ב־move_type – פשוט:
+                pass  # כל מקרה עובר
+
+            # 3. בדיקת חסימה בדרך – רק אם הכלי לא יכול לקפוץ
             if not can_jump and self._is_straight_move(dx, dy):
-                # אם הכלי לא יכול לדלג והתנועה ישרה, בודקים אם המסלול חסום.
-                # חשוב: תא היעד (target_cell) נכלל בבדיקה, אבל הפונקציה _is_path_blocked
-                # כבר אמורה להתעלם ממנו ומיתא ההתחלה.
                 if self._is_path_blocked((r, c), target_cell, occupied_cells):
-                    continue # המסלול חסום, אז המהלך אינו חוקי.
+                    continue
 
-            # אם כל הבדיקות עברו, המהלך חוקי
             valid.append(target_cell)
+
         return valid
+
 
     def _is_straight_move(self, dx: int, dy: int) -> bool:
         """Determines if a move (dx, dy) represents a straight line (horizontal, vertical, or diagonal)."""
