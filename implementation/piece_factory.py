@@ -17,7 +17,7 @@ class PieceFactory:
         self.pieces_root = pieces_root
         self.moves_lib: Dict[str, Moves] = {}
         self.state_machines: Dict[str, State] = {}
-        self.graphics_factory = GraphicsFactory(board=self.board) # העבר את הלוח
+        self.graphics_factory = GraphicsFactory(board=self.board)
         self.physics_factory = PhysicsFactory(board=self.board)
         self._load_piece_templates()
 
@@ -100,7 +100,6 @@ class PieceFactory:
                 graphics=graphics,
                 physics=physics
             )
-            # print(f"[DEBUG] Created state '{state_name}' for piece '{piece_type}' with graphics and physics.")
 
         # Stage 2: Link the states based on config
         for state_name, state_obj in state_objects.items():
@@ -134,7 +133,6 @@ class PieceFactory:
         
         # Update the initial position on the physics object of the copied state
         initial_physics = initial_state.get_physics()
-        # print(f"Type of initial_physics: {type(initial_physics)}")
 
         initial_physics.cur_pos_m = (
             cell[0] * self.board.cell_W_m,

@@ -9,4 +9,4 @@ class Board:
     img: Img
 
     def clone(self) -> "Board":
-        ...
+        pass

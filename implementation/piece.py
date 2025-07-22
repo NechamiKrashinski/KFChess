@@ -1,4 +1,3 @@
-# piece.py
 import cv2
 import numpy as np
 from typing import List, Tuple
@@ -68,14 +67,13 @@ class Piece:
 
     def get_moves(self, all_pieces: List['Piece']) -> List[Tuple[int, int]]:
         current_cell = self.get_physics().get_cell()
-        moves_logic = self._state.get_moves() # Assume this returns an instance of Moves
+        moves_logic = self._state.get_moves()
 
-        # 💡 חילוץ סוג הכלי (P, R, N, B, Q, K)
         piece_type_char = self.piece_id[0].upper() 
         
-        can_this_piece_jump = (piece_type_char == 'N') # 'N' for Knight (פרש)
+        can_this_piece_jump = (piece_type_char == 'N') 
         
-        my_color = self.piece_id[1].upper() # צבע הכלי הנוכחי (W/B)
+        my_color = self.piece_id[1].upper() 
 
         all_occupied_cells: List[Tuple[int, int]] = []
         occupied_enemy_cells: List[Tuple[int, int]] = []
@@ -94,7 +92,6 @@ class Piece:
             all_occupied_cells=all_occupied_cells,
             occupied_enemy_cells=occupied_enemy_cells,
             can_jump=can_this_piece_jump,
-            # 💡 הוספת הפרמטרים החדשים
             piece_type=piece_type_char, 
             my_color=my_color
         )
