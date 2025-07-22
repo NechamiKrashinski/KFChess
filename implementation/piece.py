@@ -52,6 +52,8 @@ class Piece:
         # אם יש Cooldown, לצייר שכבה נוספת
         if not self._state.can_transition(now_ms):
             cooldown_img = piece_img.clone()
+            # קבלת המידות של תמונת הכלי הנוכחית
+            h, w, _ = cooldown_img.img.shape 
             cv2.rectangle(cooldown_img.img, (0, 0), (w, h), (0, 0, 255), -1)
             cooldown_img.draw_on(other_img=board.img, x=board_x, y=board_y, alpha=0.4)
 

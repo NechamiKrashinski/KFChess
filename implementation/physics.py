@@ -8,13 +8,14 @@ class Physics:
                  board: Board, speed_m_s: float = 1.0):
         self.board = board
         self.speed = speed_m_s
-        self.start_cell = start_cell
+        self.start_cell = start_cell # תא ההתחלה של הכלי
         self.cmd: Optional[Command] = None
         self.start_time_ms: Optional[int] = None
         self.cur_pos_m: Tuple[float, float] = (
-            start_cell[0] * board.cell_W_m,
-            start_cell[1] * board.cell_H_m
+            start_cell[0] * board.cell_W_m + board.cell_W_m / 2, # מרכז התא
+            start_cell[1] * board.cell_H_m + board.cell_H_m / 2  # מרכז התא
         )
+        self.target_cell: Tuple[int, int] = start_cell # הוסף את תא היעד הנוכחי
 
     def reset(self, cmd: Command):
         self.cmd = cmd
@@ -24,14 +25,22 @@ class Physics:
         return self.cmd
 
     def can_be_captured(self) -> bool:
+        """ברירת מחדל: כלי במנוחה יכול להילכד."""
         return True
 
     def can_capture(self) -> bool:
-        return True
+        """ברירת מחדל: כלי במנוחה אינו יכול ללכוד."""
+        return False
 
     def get_pos(self) -> Tuple[float, float]:
         return self.cur_pos_m
 
+    def get_cell(self) -> Tuple[int, int]:
+        """מחזירה את התא הנוכחי שבו הכלי נמצא."""
+        # חישוב תא הלוח מתוך הקואורדינטות המטריות
+        col = int(self.cur_pos_m[0] / self.board.cell_W_m)
+        row = int(self.cur_pos_m[1] / self.board.cell_H_m)
+        return (col, row)
 
 class IdlePhysics(Physics):
     def update(self, now_ms: int) -> Command:
@@ -42,19 +51,23 @@ class MovePhysics(Physics):
     def __init__(self, start_cell: Tuple[int, int],
                  board: Board, speed_m_s: float = 1.0):
         super().__init__(start_cell, board, speed_m_s)
-        self.end_cell: Tuple[int, int] = start_cell  # אתחול
-        self.vector_m: Tuple[float, float] = (0.0, 0.0) # אתחול
-        self.duration_s: float = 0.0  # אתחול
+        self.end_cell: Tuple[int, int] = start_cell
+        self.vector_m: Tuple[float, float] = (0.0, 0.0)
+        self.duration_s: float = 0.0
 
     def reset(self, cmd: Command):
         super().reset(cmd)
         if cmd.type != "Move" or len(cmd.params) != 2:
             raise ValueError("Invalid command for MovePhysics")
 
+        self.start_cell = self.get_cell() # קבע את תא ההתחלה האמיתי לפני תחילת התנועה
         self.end_cell = tuple(cmd.params)
+        
+        # חישוב וקטור התנועה ביחידות מטר
         dx = (self.end_cell[0] - self.start_cell[0]) * self.board.cell_W_m
         dy = (self.end_cell[1] - self.start_cell[1]) * self.board.cell_H_m
         self.vector_m = (dx, dy)
+        
         distance = (dx ** 2 + dy ** 2) ** 0.5
         self.duration_s = distance / self.speed if self.speed > 0 else float("inf")
 
@@ -66,20 +79,23 @@ class MovePhysics(Physics):
         if elapsed_s >= self.duration_s:
             # Movement finished
             self.cur_pos_m = (
-                self.end_cell[0] * self.board.cell_W_m,
-                self.end_cell[1] * self.board.cell_H_m
+                self.end_cell[0] * self.board.cell_W_m + self.board.cell_W_m / 2, # מרכז התא
+                self.end_cell[1] * self.board.cell_H_m + self.board.cell_H_m / 2  # מרכז התא
             )
+            self.start_cell = self.end_cell # עדכן את תא ההתחלה לתא היעד החדש
         else:
             # Interpolated position
             ratio = elapsed_s / self.duration_s
             self.cur_pos_m = (
-                self.start_cell[0] * self.board.cell_W_m + self.vector_m[0] * ratio,
-                self.start_cell[1] * self.board.cell_H_m + self.vector_m[1] * ratio
+                self.start_cell[0] * self.board.cell_W_m + self.board.cell_W_m / 2 + self.vector_m[0] * ratio,
+                self.start_cell[1] * self.board.cell_H_m + self.board.cell_H_m / 2 + self.vector_m[1] * ratio
             )
         return self.cmd
 
     def can_be_captured(self) -> bool:
+        """כלי בתנועה לא אמור להילכד באמצע המהלך."""
         return False
 
     def can_capture(self) -> bool:
-        return False
+        """כלי בתנועה *כן* יכול ללכוד בסיום התנועה שלו."""
+        return True

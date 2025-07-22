@@ -6,8 +6,9 @@ class Moves:
         """
         Initialize moves from the moves.txt file and board dimensions.
 
-        Each line in the file should be: "dx,dy:description"
-        (only dx and dy are used)
+        Supports both formats:
+        - "dx,dy"
+        - "dx,dy:description"
 
         Args:
             moves_txt_path (pathlib.Path): path to the moves.txt file
@@ -26,12 +27,15 @@ class Moves:
                 if not stripped or stripped.startswith("#"):
                     continue
 
-                # חלק את השורה לפי נקודתיים
-                coord_part = stripped.split(":")[0]
+                # תומך גם בפורמט בלי תיאור
+                if ":" in stripped:
+                    coord_part = stripped.split(":")[0]
+                else:
+                    coord_part = stripped
 
                 parts = coord_part.split(',')
                 if len(parts) != 2:
-                    raise ValueError(f"Invalid move line (expected format 'dx,dy:desc'): '{stripped}'")
+                    raise ValueError(f"Invalid move line (expected 'dx,dy[:desc]'): '{stripped}'")
 
                 try:
                     dx = int(parts[0])

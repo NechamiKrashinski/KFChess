@@ -31,7 +31,15 @@ class Game:
         so we can paint sprites without touching the pristine board.
         """
         # יוצר עותק עמוק של תמונת הלוח כדי למנוע ציור על הרקע המקורי
-        return Board(self.board.W_cells, self.board.H_cells, self.board.img.img.copy())
+        return Board(
+            cell_H_pix=self.board.cell_H_pix,
+            cell_W_pix=self.board.cell_W_pix,
+            cell_H_m=self.board.cell_H_m,
+            cell_W_m=self.board.cell_W_m,
+            W_cells=self.board.W_cells,
+            H_cells=self.board.H_cells,
+            img=self.board.img.clone()  # העתקה עמוקה כמו במחלקת Board.clone()
+        )
 
     def start_user_input_thread(self):
         """Start the user input thread for mouse handling."""
@@ -127,26 +135,44 @@ class Game:
 
     # ─── capture resolution ────────────────────────────────────────────────
     def _resolve_collisions(self, now_ms: int):
-        """Resolve piece collisions and captures."""
-        pieces_to_check = list(self.pieces.values())
-        for i in range(len(pieces_to_check)):
-            for j in range(i + 1, len(pieces_to_check)):
-                p1 = pieces_to_check[i]
-                p2 = pieces_to_check[j]
-                
-                # Assume a simple collision check based on position
-                pos1 = p1.get_physics().get_pos()
-                pos2 = p2.get_physics().get_pos()
-                distance = math.sqrt((pos1[0]-pos2[0])**2 + (pos1[1]-pos2[1])**2)
-                
-                if distance < 50: # Assume a collision distance of 50m
+        to_remove = set()
+        
+        # מילון לשמירת מיקום נוכחי של כל כלי על הלוח (תא)
+        piece_locations: Dict[Tuple[int, int], Piece] = {}
+        for p in self.pieces.values():
+            current_cell = p.get_physics().get_cell()
+            # אם יש כבר כלי בתא הזה, זהו מצב של התנגשות (או לכידה)
+            if current_cell in piece_locations:
+                p1 = piece_locations[current_cell]
+                p2 = p
+
+                # ודא שהם מצבעים שונים
+                if p1.piece_id[1] != p2.piece_id[1]:
+                    # לכידה: הכלי שתפס הוא זה שנמצא כרגע בתנועה (אם רלוונטי)
+                    # או הכלי שנכנס לתא אחרון (במשחק אסינכרוני זה יותר מורכב)
+                    # לצורך הפשטות, נבחר כלי אחד שיכול ללכוד
                     if p1.get_physics().can_capture() and p2.get_physics().can_be_captured():
                         print(f"Piece {p1.piece_id} captures {p2.piece_id}!")
-                        del self.pieces[p2.piece_id]
+                        to_remove.add(p2.piece_id)
                     elif p2.get_physics().can_capture() and p1.get_physics().can_be_captured():
                         print(f"Piece {p2.piece_id} captures {p1.piece_id}!")
-                        del self.pieces[p1.piece_id]
-                        
+                        to_remove.add(p1.piece_id)
+                    # טיפול במצב שבו אף אחד לא יכול ללכוד או שניהם יכולים
+                    # לדוגמה: שניהם יכולים ללכוד -> שניהם נעלמים או שהראשון מנצח
+                    # כרגע נשמור על הלוגיקה הקיימת (הכלי הראשון שנמצא מנצח)
+                else:
+                    # כלים מאותו צבע באותו תא - בעיה לוגית, אולי לדחוף אחד החוצה
+                    # או למנוע את המהלך מלכתחילה. כרגע זה פשוט אומר שאין לכידה.
+                    pass
+            else:
+                piece_locations[current_cell] = p
+
+        # בצע את הסרת הכלים רק לאחר שעברנו על כל הכלים כדי למנוע שינוי רשימה תוך כדי איטרציה
+        for pid in to_remove:
+            if pid in self.pieces:
+                del self.pieces[pid]
+                
+                       
     # ─── board validation & win detection ───────────────────────────────────
     def _is_win(self) -> bool:
         """Check if the game has ended."""
