@@ -27,7 +27,9 @@ class GameBuilder:
         board_img = Img()
         board_img_path = self.root_folder / board_image_file
         board_img.read(board_img_path)
-        
+        expected_board_width_pix = board_width * cell_width_pix
+        expected_board_height_pix = board_height * cell_height_pix
+        board_img.resize(expected_board_width_pix, expected_board_height_pix)
         # יוצר את אובייקט ה-Board עם כל הפרמטרים הנדרשים
         cell_width_m = 0.5
         cell_height_m = 0.5

@@ -22,8 +22,6 @@ class Game:
         self.selected_piece_id: Optional[str] = None
         self.selected_cell: Optional[Tuple[int, int]] = None
 
-
-
     # ─── helpers ─────────────────────────────────────────────────────────────
     def game_time_ms(self) -> int:
         """Return the current game time in milliseconds."""
@@ -34,7 +32,6 @@ class Game:
         Return a **brand-new** Board wrapping a copy of the background pixels
         so we can paint sprites without touching the pristine board.
         """
-        # יוצר עותק עמוק של תמונת הלוח כדי למנוע ציור על הרקע המקורי
         return Board(
             cell_H_pix=self.board.cell_H_pix,
             cell_W_pix=self.board.cell_W_pix,
@@ -42,7 +39,7 @@ class Game:
             cell_W_m=self.board.cell_W_m,
             W_cells=self.board.W_cells,
             H_cells=self.board.H_cells,
-            img=self.board.img.clone()  # העתקה עמוקה כמו במחלקת Board.clone()
+            img=self.board.img.clone()
         )
 
     def start_user_input_thread(self):
@@ -53,9 +50,6 @@ class Game:
     def _mouse_handler_loop(self):
         """Handle mouse clicks and queue commands in a separate thread."""
         while self.running:
-            # Placeholder for mouse handling logic.
-            # In a real game, this would listen for mouse events and create commands.
-            # For now, we'll just simulate a command or sleep to prevent high CPU usage.
             time.sleep(0.01)
 
     # ─── main public entrypoint ──────────────────────────────────────────────
@@ -64,9 +58,7 @@ class Game:
         cv2.imshow("Board", self.board.img.img)
         cv2.setMouseCallback("Board", self._mouse_callback)
 
-        # QWe2e5
-        # The provided skeleton has a command queue, so let's start the thread.
-        self.start_user_input_thread() 
+        self.start_user_input_thread()
 
         start_ms = self.game_time_ms()
         for p in self.pieces.values():
@@ -75,7 +67,7 @@ class Game:
                 piece_id=p.piece_id,
                 type="init",
                 params=p.get_physics().get_pos()
-            )         
+            )
             p.on_command(cmd, start_ms)
 
         # ─────── main loop ──────────────────────────────────────────────────
@@ -87,7 +79,6 @@ class Game:
                 p.update(now)
 
             # (2) handle queued Commands from mouse thread
-            # The provided skeleton has a command queue. Let's process it.
             while not self.user_input_queue.empty():
                 cmd: Command = self.user_input_queue.get()
                 self._process_input(cmd, now)
@@ -95,11 +86,11 @@ class Game:
             # (3) draw current position
             self._draw(now)
             if not self._show():
-                self.running = False  # Set running flag to False if user closes window
-            
+                self.running = False
+
             # (4) detect captures
             self._resolve_collisions(now)
-            
+
             if self._is_win():
                 break
 
@@ -111,14 +102,13 @@ class Game:
         if event != cv2.EVENT_LBUTTONDOWN:
             return
 
-        # חשב את תא הלוח שנלחץ
         col = x // self.board.cell_W_pix
         row = y // self.board.cell_H_pix
         clicked_cell = (col, row)
 
-        # בדיקה אם יש כלי בתא שנלחץ
         clicked_piece_id = None
         for pid, piece in self.pieces.items():
+            # וודא שהכלי נמצא בתא הנכון ועדיין פעיל על הלוח (אם יש מנגנון להוצאת כלים)
             if piece.get_physics().get_cell() == clicked_cell:
                 clicked_piece_id = pid
                 break
@@ -133,9 +123,18 @@ class Game:
             # קליק שני: נסי להזיז ליעד
             target_cell = clicked_cell
             piece = self.pieces[self.selected_piece_id]
-            occupied = [p.get_physics().get_cell() for pid, p in self.pieces.items()
-            if pid != self.selected_piece_id and p.piece_id[1] != self.pieces[self.selected_piece_id].piece_id[1]]
-            moves = piece.get_moves(occupied)
+
+            # --- התיקון הוא כאן: יצירת רשימת occupied_cells ---
+            # רשימה של כל התאים התפוסים על ידי כלים אחרים (שלנו ושל היריב).
+            # זה הכרחי לבדיקת חסימת המסלול.
+            occupied_cells_for_path_check = [
+                p.get_physics().get_cell()
+                for pid_iter, p in self.pieces.items()
+                if pid_iter != self.selected_piece_id # לא כולל את הכלי הנבחר עצמו
+            ]
+
+            moves = piece.get_moves(occupied_cells_for_path_check) # העבר את הרשימה המתוקנת
+            
             if target_cell in moves:
                 cmd = Command(
                     timestamp=self.game_time_ms(),
@@ -163,7 +162,7 @@ class Game:
         for p in self.pieces.values():
             p.draw_on_board(cloned_board, now_ms)
         self.current_frame = cloned_board.img.img
-        
+
     def _show(self) -> bool:
         """Show the current frame and handle window events."""
         cv2.imshow("Board", self.current_frame)
@@ -175,43 +174,31 @@ class Game:
     # ─── capture resolution ────────────────────────────────────────────────
     def _resolve_collisions(self, now_ms: int):
         to_remove = set()
-        
-        # מילון לשמירת מיקום נוכחי של כל כלי על הלוח (תא)
+
         piece_locations: Dict[Tuple[int, int], Piece] = {}
         for p in self.pieces.values():
             current_cell = p.get_physics().get_cell()
-            # אם יש כבר כלי בתא הזה, זהו מצב של התנגשות (או לכידה)
             if current_cell in piece_locations:
                 p1 = piece_locations[current_cell]
                 p2 = p
 
-                # ודא שהם מצבעים שונים
                 if p1.piece_id[1] != p2.piece_id[1]:
-                    # לכידה: הכלי שתפס הוא זה שנמצא כרגע בתנועה (אם רלוונטי)
-                    # או הכלי שנכנס לתא אחרון (במשחק אסינכרוני זה יותר מורכב)
-                    # לצורך הפשטות, נבחר כלי אחד שיכול ללכוד
                     if p1.get_physics().can_capture() and p2.get_physics().can_be_captured():
                         print(f"Piece {p1.piece_id} captures {p2.piece_id}!")
                         to_remove.add(p2.piece_id)
                     elif p2.get_physics().can_capture() and p1.get_physics().can_be_captured():
                         print(f"Piece {p2.piece_id} captures {p1.piece_id}!")
                         to_remove.add(p1.piece_id)
-                    # טיפול במצב שבו אף אחד לא יכול ללכוד או שניהם יכולים
-                    # לדוגמה: שניהם יכולים ללכוד -> שניהם נעלמים או שהראשון מנצח
-                    # כרגע נשמור על הלוגיקה הקיימת (הכלי הראשון שנמצא מנצח)
                 else:
-                    # כלים מאותו צבע באותו תא - בעיה לוגית, אולי לדחוף אחד החוצה
-                    # או למנוע את המהלך מלכתחילה. כרגע זה פשוט אומר שאין לכידה.
-                    pass
+                    pass # Same color pieces on the same cell - typically an invalid game state or a special rule
             else:
                 piece_locations[current_cell] = p
 
-        # בצע את הסרת הכלים רק לאחר שעברנו על כל הכלים כדי למנוע שינוי רשימה תוך כדי איטרציה
         for pid in to_remove:
             if pid in self.pieces:
                 del self.pieces[pid]
-                
-                       
+
+
     # ─── board validation & win detection ───────────────────────────────────
     def _is_win(self) -> bool:
         """Check if the game has ended."""

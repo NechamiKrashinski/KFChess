@@ -1,11 +1,10 @@
 import pathlib
 import time
 import copy
-from typing import Optional
+from typing import Optional, List
 from .command import Command
 from .board import Board
-# from implementation.img import Img
-from .img import Img
+from .img import Img # Ensure this import is correct
 
 class Graphics:
     def __init__(self,
@@ -33,10 +32,12 @@ class Graphics:
         Load all PNG sprites from the sprites folder, sorted by filename.
         """
         files = sorted(self.sprites_folder.glob("*.png"))
-        cell_size = (self.board.cell_W_pix, self.board.cell_H_pix)
+        
+        target_size = (self.board.cell_W_pix, self.board.cell_H_pix)
 
         for file in files:
-            img = Img().read(file, size=cell_size)
+            img = Img()
+            img.read(file, target_size=target_size) # This is where the resize happens now
             self.sprites.append(img)
 
         self.total_frames = len(self.sprites)
@@ -47,12 +48,13 @@ class Graphics:
         """
         Create a deep copy of this Graphics object.
         """
-        # השימוש ב-deepcopy מבטיח שכל האובייקטים הפנימיים יועתקו
-        # ולא יפנו לאותם אובייקטים בזיכרון.
+        # Note: deepcopy for Img objects within sprites list will call Img.clone()
+        # if you implement __deepcopy__ in Img. Otherwise, it will just copy references.
+        # If Img objects are truly immutable after creation, copying references is fine.
+        # If Img can be modified *after* being loaded into Graphics, then Img.clone()
+        # needs to be properly handled by deepcopy.
         return copy.deepcopy(self)
 
-    
-    
     def reset(self, cmd: Command):
         """ 
         Reset animation state (start from frame 0).

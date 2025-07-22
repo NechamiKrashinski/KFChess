@@ -12,10 +12,11 @@ class Physics:
         self.cmd: Optional[Command] = None
         self.start_time_ms: Optional[int] = None
         self.cur_pos_m: Tuple[float, float] = (
-            start_cell[0] * board.cell_W_m + board.cell_W_m / 2, # מרכז התא
-            start_cell[1] * board.cell_H_m + board.cell_H_m / 2  # מרכז התא
+            start_cell[0] * board.cell_W_m, # פינה שמאלית
+            start_cell[1] * board.cell_H_m  # פינה עליונה
         )
-        self.target_cell: Tuple[int, int] = start_cell # הוסף את תא היעד הנוכחי
+        self.target_cell: Tuple[int, int] = start_cell
+
 
     def reset(self, cmd: Command):
         self.cmd = cmd
@@ -84,20 +85,37 @@ class MovePhysics(Physics):
             return self.cmd
 
         elapsed_s = (now_ms - self.start_time_ms) / 1000.0
+        
+        # 1. בדוק אם התנועה הסתיימה
         if elapsed_s >= self.duration_s:
-            # Movement finished
+            # הגדר את המיקום הסופי וסיים את התנועה
             self.cur_pos_m = (
-                self.end_cell[0] * self.board.cell_W_m + self.board.cell_W_m / 2, # מרכז התא
-                self.end_cell[1] * self.board.cell_H_m + self.board.cell_H_m / 2  # מרכז התא
+                self.end_cell[0] * self.board.cell_W_m,
+                self.end_cell[1] * self.board.cell_H_m
             )
-            self.start_cell = self.end_cell # עדכן את תא ההתחלה לתא היעד החדש
-        else:
-            # Interpolated position
+            self.start_cell = self.end_cell
+            # אולי תחזור למצב Idle כאן, או תמשיך לטפל בפקודה
+            # כדי למנוע קריאה נוספת ל-MovePhysics עבור תנועה שהסתיימה
+            # במקום להחזיר self.cmd, נרצה אולי להחזיר את הפקודה המקורית שקיבלה הפיזיקה
+            # זה יכול להיות מורכב יותר, אז נתמקד בתיקון ה-ratio כרגע.
+            
+            # אם אין פה שימוש ב-ratio, אז אין צורך להגדיר אותו.
+            # אבל אולי אתה רוצה לטפל במקרה של תנועה שהסתיימה על ידי מעבר למצב פיזיקה אחר (IdlePhysics)?
+            # נניח בינתיים שזה בסדר להחזיר את ה-cmd הנוכחי.
+            return self.cmd # התנועה הסתיימה, לא צריך לחשב ratio
+
+        # 2. אם התנועה עדיין בעיצומה, חשב את ratio
+        # המקרה שבו התנועה עדיין מתבצעת
+        if self.duration_s > 0: # וודא שאין חלוקה באפס
             ratio = elapsed_s / self.duration_s
-            self.cur_pos_m = (
-                self.start_cell[0] * self.board.cell_W_m + self.board.cell_W_m / 2 + self.vector_m[0] * ratio,
-                self.start_cell[1] * self.board.cell_H_m + self.board.cell_H_m / 2 + self.vector_m[1] * ratio
-            )
+        else: # אם duration_s הוא 0 (תנועה מיידית או משהו כזה)
+            ratio = 1.0 # או כל ערך אחר הגיוני למצב מיידי
+
+        # חשב את המיקום המבוסס על אינטרפולציה
+        self.cur_pos_m = (
+            self.start_cell[0] * self.board.cell_W_m + self.vector_m[0] * ratio,
+            self.start_cell[1] * self.board.cell_H_m + self.vector_m[1] * ratio
+        )
         return self.cmd
 
     def can_be_captured(self) -> bool:

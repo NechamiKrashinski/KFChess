@@ -17,7 +17,7 @@ class PieceFactory:
         self.pieces_root = pieces_root
         self.moves_lib: Dict[str, Moves] = {}
         self.state_machines: Dict[str, State] = {}
-        self.graphics_factory = GraphicsFactory(board=self.board)
+        self.graphics_factory = GraphicsFactory(board=self.board) # העבר את הלוח
         self.physics_factory = PhysicsFactory(board=self.board)
         self._load_piece_templates()
 
