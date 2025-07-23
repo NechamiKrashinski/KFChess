@@ -1,4 +1,3 @@
-# implementation/img.py
 import cv2
 import numpy as np
 import pathlib
@@ -15,7 +14,7 @@ class Img:
         self.img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
         if self.img is None:
             raise ValueError(f"Could not read image from {path}. Check file format or corruption.")
-        
+
         if self.img.shape[2] == 3:
             self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2BGRA)
         elif self.img.shape[2] == 4:
@@ -25,14 +24,14 @@ class Img:
 
         if target_size:
             self.resize(target_size[0], target_size[1])
-        
-        return self # חשוב להחזיר self כדי לאפשר שרשור (כמו Img().read(...))
 
-    def copy(self) -> 'Img': # שינוי: מ-clone ל-copy
+        return self
+
+    def copy(self) -> 'Img':
         """Creates a deep copy of the Img object."""
         new_img_obj = Img()
         if self.img is not None:
-            new_img_obj.img = self.img.copy() # העתקה עמוקה של מערך ה-numpy
+            new_img_obj.img = self.img.copy()
         return new_img_obj
 
     def draw_on(self, other_img: 'Img', x: int, y: int, alpha: float = 1.0):
@@ -65,13 +64,13 @@ class Img:
 
         for c in range(0, 3):
             roi_dst[:, :, c] = (alpha_src_blended * roi_src[:, :, c] +
-                                 alpha_dst_blended * roi_dst[:, :, c])
+                                alpha_dst_blended * roi_dst[:, :, c])
 
     def resize(self, new_width: int, new_height: int):
         """Resizes the image to the specified new_width and new_height."""
         if self.img is None:
             raise ValueError("Cannot resize empty image. 'img' attribute is None.")
-        
+
         current_height, current_width = self.img.shape[:2]
         if new_width == current_width and new_height == current_height:
             return
@@ -79,17 +78,30 @@ class Img:
         interpolation = cv2.INTER_AREA if (new_width < current_width or new_height < current_height) else cv2.INTER_LINEAR
         self.img = cv2.resize(self.img, (new_width, new_height), interpolation=interpolation)
 
-    def get_width(self) -> int: 
+    def get_width(self) -> int:
         return self.img.shape[1] if self.img is not None else 0
-    
-    def get_height(self) -> int: 
+
+    def get_height(self) -> int:
         return self.img.shape[0] if self.img is not None else 0
 
     def put_text(self, txt: str, x: int, y: int, font_size: float, *args, **kwargs):
-        # בדרך כלל CV2.putText דורש תמונה, אז נדמה זאת
-        # (זה רק ב-Img האמיתי, ב-MockImg זה יתועד)
-        pass 
+        pass
 
     def show(self):
-        # בדרך כלל CV2.imshow, נדמה זאת
         pass
+
+    # --- פונקציה חדשה לציור מלבן (חדש) ---
+    def draw_rectangle(self, x1: int, y1: int, width: int, height: int, color: Tuple[int, int, int], thickness: int):
+        """
+        Draws a rectangle on the image.
+        Args:
+            x1 (int): X-coordinate of the top-left corner.
+            y1 (int): Y-coordinate of the top-left corner.
+            width (int): Width of the rectangle.
+            height (int): Height of the rectangle.
+            color (Tuple[int, int, int]): BGR color tuple (e.g., (0, 255, 0) for green).
+            thickness (int): Thickness of the rectangle border. Use -1 for a filled rectangle.
+        """
+        if self.img is not None:
+            x2, y2 = x1 + width, y1 + height
+            cv2.rectangle(self.img, (x1, y1), (x2, y2), color, thickness)
