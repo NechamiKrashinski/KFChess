@@ -1,99 +1,599 @@
-# import pytest
-# import numpy as np
-# from unittest.mock import MagicMock
-# from implementation.piece import Piece
-# from implementation.board import Board
-# from implementation.mock_img import MockImg
+import pytest
+from unittest.mock import MagicMock, patch
+import cv2
+import numpy as np
+
+# Assuming these are in the same parent directory for relative import
+# You might need to adjust the import paths based on your actual project structure
+# For testing purposes, we'll mock them extensively.
+from implementation.piece import Piece
+from implementation.board import Board
+from implementation.command import Command
+from implementation.state import State # Make sure State is imported
+from implementation.moves import Moves
+
+# Mock dependencies as they are external or have complex internal logic
+# We only care that Piece interacts with them correctly.
+
+class MockMoves(MagicMock):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    def get_moves(self, *args, **kwargs):
+        pass
+
+class MockGraphics:
+    def __init__(self, img_data=None):
+        # Ensure default image has 3 channels and a reasonable size
+        self.img = img_data if img_data is not None else np.zeros((50, 50, 3), dtype=np.uint8)
+        # Ensure the img attribute itself has a .shape, which numpy arrays do by default
+
+    def get_img(self):
+        return self
+    def draw_on(self, other_img, x, y, alpha=1.0):
+        # Simulate drawing by checking if the method was called
+        pass
+    def clone(self):
+        # Simulate cloning for the cooldown image. Return a new MockGraphics instance.
+        # Ensure the cloned instance also has a valid .img with .shape
+        return MockGraphics(self.img.copy())
+
+class MockPhysics:
+    def __init__(self, initial_pos_m=(0.0, 0.0), initial_cell=(0, 0)):
+        self._pos_m = initial_pos_m
+        self._cell = initial_cell
+    def get_pos(self):
+        return self._pos_m
+    def get_cell(self):
+        return self._cell
+
+class MockCommand:
+    def __init__(self, type="move", data=(0,0)):
+        self.type = type
+        self.data = data
+
+class MockState:
+    def __init__(self, initial_pos=(0,0), initial_cell=(0,0), can_transition_val=True, command=None,
+                     process_command_return_state=None, update_return_state=None):
+        # ... (קוד ה-init הקיים) ...
+
+        # מוקים עבור אובייקטים שה-State מחזיר (Graphics, Physics, Moves)
+        self._graphics_mock = MagicMock(spec=MockGraphics)
+        
+        # הקפד ש-get_img() יחזיר אובייקט שיש לו גם תכונת img וגם מתודת draw_on
+        mock_get_img_return_value = MagicMock(spec=MockGraphics) # This is the object Piece.draw_on_board expects to call .draw_on on
+        mock_get_img_return_value.img = np.zeros((50, 50, 3), dtype=np.uint8) # Ensure it has an img attribute with shape
+        # mock_get_img_return_value.img.shape = (50, 50, 3) # This line is redundant, np.zeros already has shape
+        mock_get_img_return_value.draw_on = MagicMock() # This is the method we want to assert on
+        self._graphics_mock.get_img.return_value = mock_get_img_return_value
 
 
-# @pytest.fixture
-# def dummy_board():
-#     return Board(
-#         cell_H_pix=100,
-#         cell_W_pix=100,
-#         cell_H_m=1,
-#         cell_W_m=1,
-#         W_cells=8,
-#         H_cells=8,
-#         img=MockImg()
-#     )
+        # הקפד ש-clone() יחזיר אובייקט שיש לו גם תכונת img וגם מתודת draw_on
+        mock_clone_return_value = MagicMock(spec=MockGraphics) # This is the object Piece.draw_on_board expects to call .draw_on on for cooldown
+        # *** התיקון כאן: ודא ש-cooldown_img.img הוא מערך numpy עם shape תקין ***
+        mock_clone_return_value.img = np.zeros((50, 50, 3), dtype=np.uint8) 
+        # mock_clone_return_value.img.shape = (50, 50, 3) # This line is redundant, np.zeros already has shape
+        mock_clone_return_value.draw_on = MagicMock() # This is the method we want to assert on
+        self._graphics_mock.clone.return_value = mock_clone_return_value
 
 
-# def test_draw_on_board_normal(dummy_board):
-#     dummy_state = MagicMock()
-#     dummy_graphics = MagicMock()
-#     dummy_physics = MagicMock()
+        self._physics_mock = MagicMock(spec=MockPhysics)
+        self._physics_mock.get_pos.return_value = initial_pos
+        self._physics_mock.get_cell.return_value = initial_cell
 
-#     dummy_physics.get_pos.return_value = (2, 2)
-#     dummy_graphics.get_img.return_value.img = np.ones((50, 50, 3), dtype=np.uint8)
+        self._moves_mock = MagicMock() # Now MockMoves does not have get_moves pre-defined
 
-#     dummy_state.get_graphics.return_value = dummy_graphics
-#     dummy_state.get_physics.return_value = dummy_physics
-#     dummy_state.can_transition.return_value = True
-#     dummy_state.update.return_value = dummy_state
-
-#     p = Piece("P1", dummy_state)
-#     p.draw_on_board(dummy_board, now_ms=1000)
-
-
-# def test_draw_on_board_with_cooldown(dummy_board):
-#     dummy_state = MagicMock()
-#     dummy_graphics = MagicMock()
-#     dummy_physics = MagicMock()
-
-#     dummy_physics.get_pos.return_value = (2, 2)
-#     dummy_graphics.get_img.return_value.img = np.ones((50, 50, 3), dtype=np.uint8)
-
-#     dummy_state.get_graphics.return_value = dummy_graphics
-#     dummy_state.get_physics.return_value = dummy_physics
-#     dummy_state.can_transition.return_value = False
-#     dummy_state.update.return_value = dummy_state
-
-#     p = Piece("P1", dummy_state)
-#     p.draw_on_board(dummy_board, now_ms=1000)
+    # מתודות פנימיות שבהן ישתמשו ה-MagicMocks שמעליהן
+    def _process_command_internal(self, cmd: Command, now_ms: int):
+        if self._process_command_return_state:
+            return self._process_command_return_state
+        # דוגמה ליצירת מצב חדש ב-process_command
+        new_state = MockState(
+            initial_pos=(self._physics_mock.get_cell.return_value[0] + 1, self._physics_mock.get_cell.return_value[1] + 1),
+            initial_cell=(self._physics_mock.get_cell.return_value[0] + 1, self._physics_mock.get_cell.return_value[1] + 1),
+            can_transition_val=self._can_transition_val,
+            command=cmd
+        )
+        # חשוב להעביר את המוקים הפנימיים למצב החדש אם הם צריכים להישאר זהים
+        new_state._graphics_mock = self._graphics_mock
+        new_state._physics_mock = self._physics_mock
+        new_state._moves_mock = self._moves_mock
+        return new_state
 
 
-# def test_draw_raises_if_out_of_bounds():
-#     dummy_state = MagicMock()
-#     dummy_graphics = MagicMock()
-#     dummy_physics = MagicMock()
+    def _reset_internal(self, cmd: Command):
+        pass # לוגיקת איפוס אמיתית תהיה כאן
 
-#     # קואורדינטות שממקמות את הפינה הימנית התחתונה מחוץ לתחומי הלוח
-#     dummy_physics.get_pos.return_value = (7.5, 7.5)  # אחרון בתא 7 (מתוך 0-7)
-#     dummy_graphics.get_img.return_value.img = np.ones((100, 100, 3), dtype=np.uint8)
+    def _get_command_internal(self):
+        return self._command
 
-#     dummy_state.get_graphics.return_value = dummy_graphics
-#     dummy_state.get_physics.return_value = dummy_physics
-#     dummy_state.update.return_value = dummy_state
+    def _update_internal(self, now_ms: int):
+        if self._update_return_state:
+            return self._update_return_state
+        return self
 
-#     board = Board(
-#         cell_H_pix=100,
-#         cell_W_pix=100,
-#         cell_H_m=1,
-#         cell_W_m=1,
-#         W_cells=8,
-#         H_cells=8,
-#         img=MockImg()
-#     )
+    # --- המתודה החדשה לאיפוס מוקים פנימיים ---
+    def reset_internal_mocks(self):
+        # איפוס כל ה-MagicMocks שהם חלק מהאובייקט MockState
+        self._graphics_mock.reset_mock()
+        self._physics_mock.reset_mock()
+        self._moves_mock.reset_mock()
+        self.can_transition.reset_mock()
+        self.process_command.reset_mock()
+        self.reset.reset_mock()
+        self.get_command.reset_mock()
+        self.update.reset_mock()
 
-#     p = Piece("P1", dummy_state)
+        # אם יש צורך, אפס גם את הערכים הפנימיים לערכי ברירת מחדל עבור תרחיש חדש
+        self._can_transition_val = True
+        self._command = None
+        self._process_command_return_state = None
+        self._update_return_state = None
 
-#     with pytest.raises(ValueError, match="Image drawing exceeds board dimensions"):
-#         p.draw_on_board(board, now_ms=1000)
+        # Re-configure default return values for graphics mocks after reset
+        mock_get_img_return_value = MagicMock(spec=MockGraphics)
+        mock_get_img_return_value.img = np.zeros((50, 50, 3), dtype=np.uint8)
+        mock_get_img_return_value.img.shape = (50, 50, 3)
+        mock_get_img_return_value.draw_on = MagicMock()
+        self._graphics_mock.get_img.return_value = mock_get_img_return_value
+
+        mock_clone_return_value = MagicMock(spec=MockGraphics)
+        mock_clone_return_value.img = np.zeros((50, 50, 3), dtype=np.uint8)
+        mock_clone_return_value.img.shape = (50, 50, 3)
+        mock_clone_return_value.draw_on = MagicMock()
+        self._graphics_mock.clone.return_value = mock_clone_return_value
+
+    # ... (שאר המתודות של MockState: get_graphics, get_physics, get_moves) ...
+    def get_graphics(self):
+        return self._graphics_mock
+
+    def get_physics(self):
+        return self._physics_mock
+
+    def get_moves(self):
+        return self._moves_mock
+
+class TestPiece:
+
+    @pytest.fixture
+    def mock_initial_state(self):
+        """Fixture for a mock initial State object."""
+        return MockState()
+
+    @pytest.fixture
+    def piece_id(self):
+        """Fixture for a sample piece ID."""
+        return "PWB1" # Pawn White Bishop 1, example ID
+
+    @pytest.fixture
+    def piece_instance(self, piece_id, mock_initial_state):
+        """Fixture for a Piece instance."""
+        return Piece(piece_id, mock_initial_state)
+
+    # --- Test __init__ ---
+    def test_init_sets_piece_id_and_state_correctly(self, piece_id, mock_initial_state):
+        """
+        Arrange: Provide a piece ID and an initial State mock.
+        Act: Initialize Piece object.
+        Assert: Verify piece_id and _state attributes are set correctly,
+                and _last_command_time is initialized to 0.
+        """
+        # Arrange (from fixtures)
+
+        # Act
+        piece = Piece(piece_id, mock_initial_state)
+
+        # Assert
+        assert piece.piece_id == piece_id
+        assert piece._state == mock_initial_state
+        assert piece._last_command_time == 0
+
+    # --- Test on_command ---
+    @pytest.mark.parametrize("can_transition_return_val, expected_state_change, expected_last_command_time_update", [
+        (True, True, True),   # Command possible, state should change, time should update
+        (False, False, False) # Command not possible, state should not change, time should not update
+    ])
+    def test_on_command_processes_command_when_possible(self, piece_instance, mock_initial_state, can_transition_return_val,
+                                                         expected_state_change, expected_last_command_time_update):
+        """
+        Arrange: Piece instance, mock command, and control can_transition behavior.
+        Act: Call on_command.
+        Assert: Verify if process_command on state is called and _last_command_time is updated based on can_transition.
+        """
+        # Arrange
+        cmd = MagicMock(spec=Command)
+        now_ms = 1000
+        
+        # Configure the mock_initial_state to control can_transition behavior
+        mock_initial_state._can_transition_val = can_transition_return_val
+        
+        # Mock the return value of process_command to be a *new* mock state
+        new_mock_state = MockState(can_transition_val=can_transition_return_val)
+        # We need to ensure that the process_command method of the MockState returns the new state
+        mock_initial_state._process_command_return_state = new_mock_state # Set internal value
+
+        initial_state_before_command = piece_instance._state # Capture initial state for comparison
+
+        # Act
+        piece_instance.on_command(cmd, now_ms)
+
+        # Assert
+        if expected_state_change:
+            # Check if process_command was called on the *original* state object
+            mock_initial_state.process_command.assert_called_once_with(cmd, now_ms)
+            # Verify the piece's internal state was updated to the new state returned by process_command
+            assert piece_instance._state == new_mock_state
+            assert piece_instance._last_command_time == now_ms
+        else:
+            mock_initial_state.process_command.assert_not_called()
+            # State should remain the same if command was not possible
+            assert piece_instance._state == initial_state_before_command
+            assert piece_instance._last_command_time == 0 # Should remain initial value
+
+    def test_on_command_does_not_process_if_can_transition_false(self, piece_instance, mock_initial_state):
+        """
+        Arrange: Piece instance where state.can_transition returns False.
+        Act: Call on_command.
+        Assert: Verify process_command is NOT called and _last_command_time is NOT updated.
+        """
+        # Arrange
+        cmd = MagicMock(spec=Command)
+        now_ms = 1000
+        mock_initial_state._can_transition_val = False # Set internal value
+        initial_last_command_time = piece_instance._last_command_time # Should be 0 initially
+
+        # Act
+        piece_instance.on_command(cmd, now_ms)
+
+        # Assert
+        mock_initial_state.process_command.assert_not_called()
+        assert piece_instance._last_command_time == initial_last_command_time
 
 
-# def test_draw_on_board_shape_mismatch(dummy_board):
-#     dummy_state = MagicMock()
-#     dummy_graphics = MagicMock()
-#     dummy_physics = MagicMock()
+    # --- Test is_command_possible ---
+    @pytest.mark.parametrize("can_transition_return_val, expected_result", [
+        (True, True),
+        (False, False)
+    ])
+    def test_is_command_possible_delegates_to_state_can_transition(self, piece_instance, mock_initial_state,
+                                                                   can_transition_return_val, expected_result):
+        """
+        Arrange: Piece instance, control state.can_transition return value.
+        Act: Call is_command_possible.
+        Assert: Verify it correctly returns the value from state.can_transition and calls it.
+        """
+        # Arrange
+        now_ms = 500
+        mock_initial_state._can_transition_val = can_transition_return_val # Set internal value
 
-#     dummy_physics.get_pos.return_value = (2, 2)
-#     dummy_graphics.get_img.return_value.img = np.ones((100, 100, 3), dtype=np.uint8)
+        # Act
+        result = piece_instance.is_command_possible(MagicMock(spec=Command), now_ms)
 
-#     dummy_state.get_graphics.return_value = dummy_graphics
-#     dummy_state.get_physics.return_value = dummy_physics
-#     dummy_state.update.return_value = dummy_state
+        # Assert
+        assert result == expected_result
+        mock_initial_state.can_transition.assert_called_once_with(now_ms)
 
-#     p = Piece("P1", dummy_state)
+    # --- Test reset ---
+    @pytest.mark.parametrize("command_exists", [True, False])
+    def test_reset_updates_last_command_time_and_resets_state_if_command_exists(self, piece_instance, mock_initial_state, command_exists):
+        """
+        Arrange: Piece instance, a start_ms, and a state that may or may not return a command.
+        Act: Call reset.
+        Assert: Verify _last_command_time is updated, and state.reset is called conditionally.
+        """
+        # Arrange
+        start_ms = 200
+        mock_cmd = MagicMock(spec=Command) if command_exists else None
+        
+        mock_initial_state._command = mock_cmd # Set internal value for get_command
 
-#     p.draw_on_board(dummy_board, now_ms=1000)
+        # Act
+        piece_instance.reset(start_ms)
+
+        # Assert
+        assert piece_instance._last_command_time == start_ms
+        mock_initial_state.get_command.assert_called_once()
+        if command_exists:
+            mock_initial_state.reset.assert_called_once_with(mock_cmd)
+        else:
+            mock_initial_state.reset.assert_not_called()
+
+    # --- Test update ---
+    def test_update_delegates_to_state_update(self, piece_instance, mock_initial_state):
+        """
+        Arrange: Piece instance.
+        Act: Call update.
+        Assert: Verify state.update is called and internal state is updated with the returned state.
+        """
+        # Arrange
+        now_ms = 300
+        new_state_after_update = MockState() # Simulate a new state object returned by update
+        mock_initial_state._update_return_state = new_state_after_update # Set internal value
+
+        # Act
+        piece_instance.update(now_ms)
+
+        # Assert
+        mock_initial_state.update.assert_called_once_with(now_ms)
+        assert piece_instance._state == new_state_after_update 
+
+    # --- Test draw_on_board ---
+    
+    @patch('cv2.rectangle') # Patch cv2.rectangle as it's a global function
+    def test_draw_on_board_draws_piece_and_cooldown_if_not_possible(self, mock_rectangle, piece_instance, mock_initial_state):
+        """
+        Arrange: Piece instance, mock board, and control state.can_transition.
+        Act: Call draw_on_board.
+        Assert: Verify graphics methods are called for drawing and cooldown (conditionally).
+        """
+        # Arrange - תרחיש 1
+        mock_board = MagicMock(spec=Board)     
+        mock_board.cell_W_m = 0.1
+        mock_board.cell_H_m = 0.1
+        mock_board.cell_W_pix = 100
+        mock_board.cell_H_pix = 100
+        mock_board.W_cells = 8
+        mock_board.H_cells = 8
+        mock_board.img = np.zeros((800, 800, 3), dtype=np.uint8) # תמונת לוח מדומה         
+
+        now_ms = 400
+
+        mock_graphics_obj = mock_initial_state.get_graphics() # גישה למוק הפנימי
+        mock_physics_obj = mock_initial_state.get_physics() # **הוספה: גישה למוק הפיזיקה**
+
+        # הגדר את מיקום הכלי עבור תרחיש 1
+        mock_physics_obj.get_pos.return_value = (0.3, 0.2) # מיקום לדוגמה במטרים (r=3, c=2)
+        
+        # תרחיש 1: יכול לעבור (אין קירור)
+        mock_initial_state._can_transition_val = True # הגדרת ערך פנימי
+
+        # Act 1
+        piece_instance.draw_on_board(mock_board, now_ms)
+
+        # Assert 1
+        mock_initial_state.update.assert_called_once_with(now_ms)     
+        mock_graphics_obj.get_img.assert_called_once()
+        
+        # צפוי draw_x = 0.3 / 0.1 * 100 = 300
+        # צפוי draw_y = 0.2 / 0.1 * 100 = 200
+        mock_graphics_obj.get_img.return_value.draw_on.assert_called_once_with(other_img=mock_board.img, x=300, y=200)
+        mock_graphics_obj.clone.assert_not_called() # אין קירור
+        mock_rectangle.assert_not_called()     
+
+        # איפוס מוקים עבור תרחיש 2
+        mock_initial_state.reset_internal_mocks() 
+        mock_rectangle.reset_mock()
+        # **הוספה: איפוס מוק הפיזיקה וקביעת מיקום חדש עבור תרחיש 2**
+        mock_physics_obj.reset_mock() 
+        mock_physics_obj.get_pos.return_value = (0.3, 0.2) # קביעה מחדש גם עבור תרחיש זה, אם נשאר באותו מיקום או אחר
+
+        # תרחיש 2: לא יכול לעבור (יש קירור)
+        mock_initial_state._can_transition_val = False # הגדרת ערך פנימי
+
+        # Act 2
+        piece_instance.draw_on_board(mock_board, now_ms)
+
+        # Assert 2
+        # update() נקרא פעם אחת לכל "Act"
+        mock_initial_state.update.assert_called_once_with(now_ms)
+        # get_img() נקרא פעם אחת לכל "Act"
+        mock_graphics_obj.get_img.assert_called_once()
+        
+        # draw_on על האובייקט שהוחזר מ-get_img() נקרא פעם אחת (הכלי עצמו)
+        mock_graphics_obj.get_img.return_value.draw_on.assert_called_once_with(other_img=mock_board.img, x=300, y=200)
+
+        mock_graphics_obj.clone.assert_called_once() # אמור לשכפל עבור קירור
+        # הקריאה ל-cv2.rectangle צריכה להיות על ה-img של האובייקט המשוכפל
+        mock_rectangle.assert_called_once_with(mock_graphics_obj.clone.return_value.img, (0, 0), (50, 50), (0, 0, 255), -1)
+        
+        # draw_on על האובייקט שהוחזר מ-clone() נקרא פעם אחת (שכבת הקירור)
+        mock_graphics_obj.clone.return_value.draw_on.assert_called_once_with(
+            other_img=mock_board.img, x=300, y=200, alpha=0.4
+        )
+        
+    @patch('builtins.print') # Patch builtins.print to check warnings
+    def test_draw_on_board_handles_piece_off_board_positions(self, mock_print, piece_instance, mock_initial_state):
+        """
+        Arrange: Piece positioned outside board boundaries.
+        Act: Call draw_on_board.
+        Assert: Verify drawing coordinates are clamped to board boundaries and warning is printed.
+        """
+        # Arrange
+        mock_board = MagicMock(spec=Board)
+        mock_board.cell_W_m = 0.1
+        mock_board.cell_H_m = 0.1
+        mock_board.cell_W_pix = 100
+        mock_board.cell_H_pix = 100
+        mock_board.W_cells = 8
+        mock_board.H_cells = 8
+        mock_board.img = np.zeros((800, 800, 3), dtype=np.uint8)      
+
+        now_ms = 400
+
+        mock_graphics_obj = mock_initial_state.get_graphics()       
+
+        mock_physics_obj = mock_initial_state.get_physics()
+        mock_initial_state._can_transition_val = True # Set internal value # No cooldown for this test
+
+        # Test case 1: Piece too far left/up (negative coordinates)
+        mock_physics_obj.get_pos.return_value = (-0.5, -0.5) # Equivalent to (-5, -5) in cells
+        
+        # Act
+        piece_instance.draw_on_board(mock_board, now_ms)
+        
+        # Assert
+        mock_graphics_obj.get_img.return_value.draw_on.assert_called_once_with(other_img=mock_board.img, x=0, y=0)
+        mock_print.assert_called_with(f"Warning: Piece drawing for {piece_instance.piece_id} at (-500, -500) exceeds board dimensions.")
+        
+        # Reset mocks for next test case
+        mock_graphics_obj.reset_mock()
+        mock_print.reset_mock()
+        mock_initial_state.update.reset_mock() # Reset update calls for next scenario
+
+
+        # Test case 2: Piece too far right/down (exceeds board)
+        # Board width = 800px, height = 800px. Piece 50x50. Max draw_x = 750, max draw_y = 750
+        mock_physics_obj.get_pos.return_value = (0.78, 0.78) # Equivalent to (7.8, 7.8) in cells
+        
+        # Act
+        piece_instance.draw_on_board(mock_board, now_ms)
+
+        # Assert
+        mock_graphics_obj.get_img.return_value.draw_on.assert_called_once_with(other_img=mock_board.img, x=750, y=750) # Clamped to (800-50, 800-50)
+        mock_print.assert_called_with(f"Warning: Piece drawing for {piece_instance.piece_id} at (780, 780) exceeds board dimensions.")
+
+
+    # --- Test get_physics ---
+    def test_get_physics_returns_state_physics(self, piece_instance, mock_initial_state):
+        """
+        Arrange: Piece instance.
+        Act: Call get_physics.
+        Assert: Verify it returns the physics object from the internal state.
+        """
+        # Arrange (from fixtures)
+
+        # Act
+        physics_obj = piece_instance.get_physics()
+
+        # Assert
+        # Corrected: Access the internal physics mock directly
+        assert physics_obj == mock_initial_state._physics_mock 
+
+    # --- Test get_moves ---
+    @pytest.mark.parametrize("piece_id, expected_can_jump", [
+        ("NW1", True),   # Knight
+        ("PW2", False), # Pawn
+        ("QB1", False), # Queen
+        ("RW3", False), # Rook
+        ("BW4", False), # Bishop
+        ("KB5", False), # King
+        ("nB1", True)   # lowercase knight
+    ])
+    def test_get_moves_calculates_correct_parameters_and_delegates_to_moves_logic(self, piece_id, expected_can_jump):
+        """
+        Arrange: Piece with specific ID, list of other pieces (some friendly, some enemy).
+        Act: Call get_moves.
+        Assert: Verify the parameters passed to moves_logic.get_moves are correct.
+        """
+        # Arrange
+        # Initialize mock_state correctly to ensure its internal mocks are set up
+        mock_state = MockState(initial_cell=(3, 3)) # Piece itself is at (3,3)
+        piece_instance = Piece(piece_id, mock_state)
+
+        # Create mock 'other' pieces
+        # Assuming piece_id format: TypeColorNumber (e.g., PWB1, NW2)
+        my_color = piece_id[1].upper()
+        
+        # Define some other pieces and their cells
+        mock_other_pieces = [
+            MagicMock(spec=Piece, piece_id=f"X{my_color}1"), # Friendly piece
+            MagicMock(spec=Piece, piece_id=f"Y{'B' if my_color == 'W' else 'W'}1"), # Enemy piece
+            MagicMock(spec=Piece, piece_id=f"Z{my_color}2"), # Another friendly piece
+        ]
+        # Set return values on the *internal physics mock* of each piece
+        for mock_p in mock_other_pieces:
+            mock_p.get_physics.return_value = MagicMock(spec=MockPhysics)
+            mock_p.get_physics.return_value.get_cell = MagicMock()
+
+        mock_other_pieces[0].get_physics.return_value.get_cell.return_value = (1, 1) # Friendly
+        mock_other_pieces[1].get_physics.return_value.get_cell.return_value = (2, 2) # Enemy
+        mock_other_pieces[2].get_physics.return_value.get_cell.return_value = (4, 4) # Friendly
+
+        all_pieces = [piece_instance] + mock_other_pieces
+
+        expected_all_occupied_cells = [(1, 1), (2, 2), (4, 4)]
+        expected_occupied_enemy_cells = [(2, 2)]
+        expected_piece_type_char = piece_id[0].upper()
+        
+        # Configure the mock moves_logic to return a dummy list
+        # Corrected: Access the internal moves mock directly
+        mock_moves_logic = mock_state._moves_mock 
+        mock_moves_logic.get_moves.return_value = [(0, 0), (1, 1)] # Dummy return value
+
+        # Act
+        actual_valid_moves = piece_instance.get_moves(all_pieces)
+
+        # Assert
+        mock_moves_logic.get_moves.assert_called_once_with(
+            r=3,
+            c=3,
+            all_occupied_cells=expected_all_occupied_cells,
+            occupied_enemy_cells=expected_occupied_enemy_cells,
+            can_jump=expected_can_jump,
+            piece_type=expected_piece_type_char,
+            my_color=my_color
+        )
+        assert actual_valid_moves == [(0, 0), (1, 1)] # Ensure the returned value is passed through
+
+    def test_get_moves_handles_no_other_pieces(self, piece_instance, mock_initial_state):
+        """
+        Arrange: Piece instance with no other pieces on the board.
+        Act: Call get_moves.
+        Assert: Verify empty lists are passed for occupied cells.
+        """
+        # Arrange
+        # Corrected: Set return value on the internal physics mock
+        mock_initial_state._physics_mock.get_cell.return_value = (3, 3)
+        
+        # Corrected: Access the internal moves mock directly
+        mock_moves_logic = mock_initial_state._moves_mock
+        mock_moves_logic.get_moves.return_value = [(0, 0)] # Dummy return
+
+        all_pieces = [piece_instance] # Only this piece on the board
+
+        # Act
+        piece_instance.get_moves(all_pieces)
+
+        # Assert
+        mock_moves_logic.get_moves.assert_called_once_with(
+            r=3,
+            c=3,
+            all_occupied_cells=[], # Should be empty
+            occupied_enemy_cells=[], # Should be empty
+            can_jump=False, # Assuming default piece_id leads to False (e.g., "PWB1")
+            piece_type='P',
+            my_color='W'
+        )
+
+    def test_get_moves_handles_all_other_pieces_friendly(self, piece_id):
+        """
+        Arrange: Piece instance and all other pieces are friendly.
+        Act: Call get_moves.
+        Assert: Verify occupied_enemy_cells is empty.
+        """
+        # Arrange
+        mock_state = MockState(initial_cell=(3, 3))
+        piece_instance = Piece(piece_id, mock_state)
+        my_color = piece_id[1].upper()
+
+        mock_other_pieces = [
+            MagicMock(spec=Piece, piece_id=f"X{my_color}1"),
+            MagicMock(spec=Piece, piece_id=f"Y{my_color}2"),
+        ]
+        # Set return values on the *internal physics mock* of each piece
+        for mock_p in mock_other_pieces:
+            mock_p.get_physics.return_value = MagicMock(spec=MockPhysics)
+            mock_p.get_physics.return_value.get_cell = MagicMock()
+
+        mock_other_pieces[0].get_physics.return_value.get_cell.return_value = (1, 1)
+        mock_other_pieces[1].get_physics.return_value.get_cell.return_value = (2, 2)
+
+        all_pieces = [piece_instance] + mock_other_pieces
+        expected_all_occupied_cells = [(1, 1), (2, 2)]
+
+        # Corrected: Access the internal moves mock directly
+        mock_moves_logic = mock_state._moves_mock
+        mock_moves_logic.get_moves.return_value = []
+
+        # Act
+        piece_instance.get_moves(all_pieces)
+
+        # Assert
+        mock_moves_logic.get_moves.assert_called_once_with(
+            r=3,
+            c=3,
+            all_occupied_cells=expected_all_occupied_cells,
+            occupied_enemy_cells=[], # Should be empty
+            can_jump=False if piece_id[0].upper() != 'N' else True,
+            piece_type=piece_id[0].upper(),
+            my_color=my_color
+        )

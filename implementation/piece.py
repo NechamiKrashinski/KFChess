@@ -38,8 +38,8 @@ class Piece:
 
         pos_x_m, pos_y_m = self._state.get_physics().get_pos()
 
-        board_x_pix = int(pos_x_m / board.cell_W_m * board.cell_W_pix)
-        board_y_pix = int(pos_y_m / board.cell_H_m * board.cell_H_pix)
+        board_x_pix = round(pos_x_m / board.cell_W_m * board.cell_W_pix)
+        board_y_pix = round(pos_y_m / board.cell_H_m * board.cell_H_pix)
 
         h_piece, w_piece, _ = piece_img.shape
 

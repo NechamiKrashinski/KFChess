@@ -63,11 +63,22 @@ class MovePhysics(Physics):
 
     def reset(self, cmd: Command):
         super().reset(cmd)
+        
+        # שלב 1: בדיקת סוג הפקודה ומספר הפרמטרים
         if cmd.type != "Move" or len(cmd.params) != 2:
-            raise ValueError("Invalid command for MovePhysics")
+            raise ValueError("Invalid command for MovePhysics: Type must be 'Move' and params must have 2 elements.")
 
-        self.start_cell = self.get_cell()
-        self.end_cell = tuple(cmd.params)
+        # שלב 2: בדיקת סוג הפרמטרים
+        # ודא ששני הפרמטרים ניתנים להמרה ל-int
+        try:
+            target_col = int(cmd.params[0])
+            target_row = int(cmd.params[1])
+            self.end_cell = (target_col, target_row)
+        except (ValueError, TypeError): # תופס גם אם זה לא ניתן להמרה (כמו 'a')
+            raise ValueError("Invalid command for MovePhysics: Params must be convertible to integers.")
+
+        # כעת כש-end_cell מוגדר ובעל סוגים נכונים, ניתן לבצע חישובים
+        self.start_cell = self.get_cell() # קבל את התא הנוכחי לפני תחילת התנועה
         
         dx = (self.end_cell[0] - self.start_cell[0]) * self.board.cell_W_m
         dy = (self.end_cell[1] - self.start_cell[1]) * self.board.cell_H_m
