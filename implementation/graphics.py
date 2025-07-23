@@ -39,9 +39,40 @@ class Graphics:
         if self.total_frames == 0:
             raise ValueError(f"No sprites found in: {self.sprites_folder}")
 
+    
     def copy(self):
-        """Create a deep copy of this Graphics object."""
-        return copy.deepcopy(self)
+        """
+        יוצרת העתקה עמוקה של אובייקט Graphics זה.
+        מעתיקה את כל המאפיינים, ובמיוחד את רשימת ה-sprites באופן עמוק.
+        """
+        # יוצרים מופע Graphics חדש עם אותם פרמטרים בסיסיים
+        # חשוב שגם ה-board יהיה עותק, ולא הפניה לאותו אובייקט
+        # נניח שלמחלקה Board יש מתודת clone() או copy() משלה
+        new_board = self.board.clone() # או self.board.clone() אם זו המתודה הקיימת
+
+        new_graphics = Graphics(
+            sprites_folder=self.sprites_folder, # pathlib.Path הוא immutable, אז לא צריך deepcopy
+            board=new_board,
+            loop=self.loop,
+            fps=self.fps
+        )
+
+        # מעתיקים את מצבי האנימציה
+        new_graphics.cur_index = self.cur_index
+        new_graphics.last_frame_time = self.last_frame_time
+        new_graphics.total_frames = self.total_frames # total_frames הוא רק מספר, לא צריך deepcopy
+
+        # החלק הקריטי: העתקה עמוקה של רשימת ה-sprites
+        new_sprites: List[Img] = []
+        for sprite in self.sprites:
+            # כאן אנחנו קוראים למתודת ה-copy() של כל אובייקט Img/MockImg
+            # וזו המתודה שבה וידאנו שיש self.img.copy() בתוך MockImg
+            new_sprites.append(sprite.copy()) # ודא שזו המתודה שאתה רוצה שתופעל (copy או clone)
+                                            # אם ב-MockImg קראת לה clone, שנה לכאן ל-sprite.clone()
+        new_graphics.sprites = new_sprites
+
+        return new_graphics
+
 
     def reset(self, cmd: Command):
         """Reset animation state (start from frame 0)."""

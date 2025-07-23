@@ -34,7 +34,7 @@ class Game:
             cell_W_m=self.board.cell_W_m,
             W_cells=self.board.W_cells,
             H_cells=self.board.H_cells,
-            img=self.board.img.clone()
+            img=self.board.img.copy()
         )
 
     def start_user_input_thread(self):

@@ -13,7 +13,7 @@ class Board:
     img: Img
 
     def clone(self) -> "Board":
-        new_img = self.img.clone()  # Deep copy of the image matrix
+        new_img = self.img.copy()  # Deep copy of the image matrix
         return Board(
             cell_H_pix=self.cell_H_pix,
             cell_W_pix=self.cell_W_pix,

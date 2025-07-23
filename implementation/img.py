@@ -1,3 +1,4 @@
+# implementation/img.py
 import cv2
 import numpy as np
 import pathlib
@@ -24,12 +25,14 @@ class Img:
 
         if target_size:
             self.resize(target_size[0], target_size[1])
+        
+        return self # חשוב להחזיר self כדי לאפשר שרשור (כמו Img().read(...))
 
-    def clone(self):
+    def copy(self) -> 'Img': # שינוי: מ-clone ל-copy
         """Creates a deep copy of the Img object."""
         new_img_obj = Img()
         if self.img is not None:
-            new_img_obj.img = self.img.copy()
+            new_img_obj.img = self.img.copy() # העתקה עמוקה של מערך ה-numpy
         return new_img_obj
 
     def draw_on(self, other_img: 'Img', x: int, y: int, alpha: float = 1.0):
@@ -62,7 +65,7 @@ class Img:
 
         for c in range(0, 3):
             roi_dst[:, :, c] = (alpha_src_blended * roi_src[:, :, c] +
-                                alpha_dst_blended * roi_dst[:, :, c])
+                                 alpha_dst_blended * roi_dst[:, :, c])
 
     def resize(self, new_width: int, new_height: int):
         """Resizes the image to the specified new_width and new_height."""
@@ -75,3 +78,18 @@ class Img:
 
         interpolation = cv2.INTER_AREA if (new_width < current_width or new_height < current_height) else cv2.INTER_LINEAR
         self.img = cv2.resize(self.img, (new_width, new_height), interpolation=interpolation)
+
+    def get_width(self) -> int: 
+        return self.img.shape[1] if self.img is not None else 0
+    
+    def get_height(self) -> int: 
+        return self.img.shape[0] if self.img is not None else 0
+
+    def put_text(self, txt: str, x: int, y: int, font_size: float, *args, **kwargs):
+        # בדרך כלל CV2.putText דורש תמונה, אז נדמה זאת
+        # (זה רק ב-Img האמיתי, ב-MockImg זה יתועד)
+        pass 
+
+    def show(self):
+        # בדרך כלל CV2.imshow, נדמה זאת
+        pass
