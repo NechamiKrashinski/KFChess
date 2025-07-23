@@ -28,7 +28,12 @@ class Piece:
             self._state.reset(cmd)
 
     def update(self, now_ms: int):
+        prev_state_name = self._state.get_graphics().sprites_folder.parent.name
         self._state = self._state.update(now_ms)
+        new_state_name = self._state.get_graphics().sprites_folder.parent.name
+        if prev_state_name != new_state_name:
+            print(f"[{self.piece_id}] {prev_state_name} -> {new_state_name}")
+
 
     def draw_on_board(self, board: Board, now_ms: int):
         self.update(now_ms)

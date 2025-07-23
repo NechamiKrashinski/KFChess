@@ -113,9 +113,9 @@ class PieceFactory:
                 next_state_obj = state_objects[next_state_name]
                 
                 # Use the command_type from the physics config as the event
-                command_type = cfg.get("physics", {}).get("command_type", next_state_name)
+                # command_type = cfg.get("physics", {}).get("command_type", next_state_name)
                 current_state_obj.set_transition(
-                    event=command_type,
+                    event=next_state_name,
                     target=next_state_obj
                 )
         

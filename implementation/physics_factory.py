@@ -10,8 +10,14 @@ class PhysicsFactory:
         """Create a physics object based on the given configuration."""
         physics_cfg = cfg.get("physics", {})
         speed_m_s = physics_cfg.get("speed_m_per_sec", 0.0)
-        
+        next_state_name = physics_cfg.get("next_state_when_finished", "idle")
+ 
         if speed_m_s > 0:
-            return MovePhysics(start_cell=start_cell, board=self.board, speed_m_s=speed_m_s)
+           return MovePhysics(
+            start_cell=start_cell,
+            board=self.board,
+            speed_m_s=speed_m_s,
+            next_state_name=next_state_name
+        )
         else:
             return IdlePhysics(start_cell=start_cell, board=self.board)

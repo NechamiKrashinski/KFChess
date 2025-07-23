@@ -5,7 +5,7 @@ from .board import Board
 
 class Physics:
     def __init__(self, start_cell: Tuple[int, int],
-                 board: Board, speed_m_s: float = 1.0):
+                 board: Board, speed_m_s: float = 1.0, next_state_name="idle"):
         self.board = board
         self.speed = speed_m_s
         self.start_cell = start_cell
@@ -16,6 +16,7 @@ class Physics:
             start_cell[1] * board.cell_H_m
         )
         self.target_cell: Tuple[int, int] = start_cell
+        self._next_state_name = next_state_name
 
     def reset(self, cmd: Command):
         self.cmd = cmd
@@ -43,7 +44,12 @@ class Physics:
 
     def create_movement_to(self, target_cell: Tuple[int, int], speed: float = 1.0) -> 'Physics':
         """Returns a new instance of MovePhysics that will move from the current cell to target_cell."""
-        move = MovePhysics(start_cell=self.get_cell(), board=self.board, speed_m_s=speed)
+        move = MovePhysics(
+        start_cell=self.get_cell(),
+        board=self.board,
+        speed_m_s=speed,
+        next_state_name=self._next_state_name 
+        )
         move.end_cell = target_cell
         return move
 
@@ -55,8 +61,10 @@ class IdlePhysics(Physics):
 
 class MovePhysics(Physics):
     def __init__(self, start_cell: Tuple[int, int],
-                 board: Board, speed_m_s: float = 1.0):
-        super().__init__(start_cell, board, speed_m_s)
+                 board: Board,
+                 speed_m_s: float = 1.0,
+                 next_state_name: str = "idle"):
+        super().__init__(start_cell, board, speed_m_s, next_state_name)
         self.end_cell: Tuple[int, int] = start_cell
         self.vector_m: Tuple[float, float] = (0.0, 0.0)
         self.duration_s: float = 0.0
@@ -87,30 +95,32 @@ class MovePhysics(Physics):
         distance = (dx ** 2 + dy ** 2) ** 0.5
         self.duration_s = distance / self.speed if self.speed > 0 else float("inf")
 
-    def update(self, now_ms: int) -> Command:
+    def update(self, now_ms: int) -> Optional[Command]:
         if self.start_time_ms is None:
-            return self.cmd
+            return None
 
         elapsed_s = (now_ms - self.start_time_ms) / 1000.0
-        
+
         if elapsed_s >= self.duration_s:
             self.cur_pos_m = (
                 self.end_cell[0] * self.board.cell_W_m,
                 self.end_cell[1] * self.board.cell_H_m
             )
             self.start_cell = self.end_cell
-            return self.cmd
 
-        if self.duration_s > 0:
-            ratio = elapsed_s / self.duration_s
-        else:
-            ratio = 1.0
+            return Command(
+                timestamp=now_ms,
+                type=self._next_state_name,
+                piece_id=self.cmd.piece_id,
+                params=self.cmd.params
+            )
 
+        ratio = elapsed_s / self.duration_s if self.duration_s > 0 else 1.0
         self.cur_pos_m = (
             self.start_cell[0] * self.board.cell_W_m + self.vector_m[0] * ratio,
             self.start_cell[1] * self.board.cell_H_m + self.vector_m[1] * ratio
         )
-        return self.cmd
+        return None
 
     def can_be_captured(self) -> bool:
         """A piece in motion should not be captured mid-move."""
