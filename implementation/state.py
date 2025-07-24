@@ -23,10 +23,15 @@ class State:
         self._physics.reset(cmd=cmd)
 
     def update(self, now_ms: int) -> 'State':
+        piece_id_for_debug = self._current_command.piece_id if self._current_command else "UNKNOWN_PIECE"
+        print(f"[{piece_id_for_debug}] State.update() called. Current state: {self._graphics.sprites_folder.parent.name}")
+       
+        
         self._graphics.update(now_ms)
         physics_cmd = self._physics.update(now_ms)
 
         if physics_cmd is not None:
+            print(f"[{piece_id_for_debug}] State.update() - Physics emitted command: {physics_cmd.type}")
             return self.process_command(physics_cmd, now_ms)
 
         # print(f"DEBUG State: Current state is {self._graphics.sprites_folder.parent.name}") # יוסיף את שם המצב (לדוגמה 'long_rest')
@@ -36,7 +41,7 @@ class State:
         if not self._graphics.loop and self._graphics.is_finished():
             piece_id = self._current_command.piece_id if self._current_command else "unknown"
             print(f"DEBUG: State for piece {piece_id} detected graphics finished at {now_ms}ms. Issuing 'finished_rest' command.")
-            input("press Enter to continue...")  # הוסף שורה זו כדי להשהות את התוכנית ולראות את ההודעה
+            # input("press Enter to continue...")  # הוסף שורה זו כדי להשהות את התוכנית ולראות את ההודעה
             finished_rest_cmd = Command(
                 timestamp=now_ms,
                 type="finished_rest",

@@ -27,8 +27,8 @@ class Game:
         # --- מצב בחירת מקלדת ---
         self.keyboard_cursor_cell: Tuple[int, int] = (0, 0)
         self.keyboard_selected_piece_id: Optional[str] = None
-        self.keyboard_cursor_color: Tuple[int, int, int] = (0, 255, 255) # צהוב
-        self.keyboard_cursor_thickness: int = 2
+        self.keyboard_cursor_color: Tuple[int, int, int] = (255, 0, 0) # צהוב
+        self.keyboard_cursor_thickness: int = 7
         self.keyboard_player_color: str = 'B' # צבע השחקן שמשחק עם המקלדת
 
 
@@ -263,6 +263,7 @@ class Game:
                 # --- בדיקה חדשה: וודא שהכלי שייך לשחקן המקלדת ---
                 if clicked_piece_id[1] == self.keyboard_player_color: # נניח שהתו השני ב-ID הוא הצבע
                     self.keyboard_selected_piece_id = clicked_piece_id
+                    self.keyboard_selected_piece_original_cell = cell_coords
                     print(f"Keyboard selected piece {clicked_piece_id} at {cell_coords}")
                 else:
                     print(f"Keyboard cannot select opponent's piece: {clicked_piece_id}")
@@ -280,7 +281,7 @@ class Game:
                     piece_id=self.keyboard_selected_piece_id,
                     type="Move",
                     params=list(target_cell),
-                    source_cell=self.keyboard_cursor_cell
+                    source_cell=self.keyboard_selected_piece_original_cell
                 )
                 self.user_input_queue.put(cmd)
                 print(f"Queued move command (Keyboard): {self.keyboard_selected_piece_id} → {target_cell}")
@@ -289,6 +290,7 @@ class Game:
 
             # איפוס הבחירה לאחר ניסיון הזזה
             self.keyboard_selected_piece_id = None
+            self.keyboard_selected_piece_original_cell = None
 
     def _is_win(self) -> bool:
         """Check if the game has ended based on king capture."""

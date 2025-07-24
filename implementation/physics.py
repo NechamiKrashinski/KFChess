@@ -23,7 +23,8 @@ class Physics:
         self.start_time_ms = cmd.timestamp
 
     def update(self, now_ms: int) -> Command:
-        return self.cmd
+        # return self.cmd
+        return None
 
     def can_be_captured(self) -> bool:
         """Default: A piece at rest can be captured."""
@@ -56,7 +57,8 @@ class Physics:
 
 class IdlePhysics(Physics):
     def update(self, now_ms: int) -> Command:
-        return self.cmd
+        # return self.cmd
+        return None
 
 
 class MovePhysics(Physics):
