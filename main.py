@@ -7,13 +7,13 @@ import logging
 # הגדרת רמת לוגינג כללית ל-DEBUG
 
 def main():
-    logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(name)s:%(message)s')
+    # logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(name)s:%(message)s')
 
 # אופציונלי: הגדר ספציפית עבור המודולים שלנו לוודא שמוצג הכל
-    logging.getLogger('implementation.piece_factory').setLevel(logging.DEBUG)
-    logging.getLogger('implementation.piece').setLevel(logging.DEBUG)
-    # logging.getLogger('implementation.state').setLevel(logging.DEBUG)
-    logging.getLogger('implementation.state').setLevel(logging.INFO)
+    # logging.getLogger('implementation.piece_factory').setLevel(logging.DEBUG)
+    # logging.getLogger('implementation.piece').setLevel(logging.DEBUG)
+    # # logging.getLogger('implementation.state').setLevel(logging.DEBUG)
+    # logging.getLogger('implementation.state').setLevel(logging.INFO)
 
     """
     Main entry point for the game application.

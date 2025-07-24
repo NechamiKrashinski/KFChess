@@ -5,13 +5,12 @@ from .board import Board
 import time
 
 class Physics:
-    # **שינוי חדש: מילון זמני קירור קבועים לפי שם המצב**
-    # (הועבר למקום אחר או יטופל ב-State, Physics לא צריך לדעת על cooldowns)
-    # _STATE_COOLDOWNS_MS = { ... }
+
 
     def __init__(self, start_cell: Tuple[int, int],
                  board: Board, speed_m_s: float = 1.0,
                  next_state_name: str = "idle"): # הסרנו current_state_name מפה
+        # print(f"pythics init --- {next_state_name} ---  --- {speed_m_s}")
         self.board = board
         self.speed = speed_m_s
         self.start_cell = start_cell
@@ -24,7 +23,9 @@ class Physics:
         )
         self.target_cell: Tuple[int, int] = start_cell
         self._next_state_name = next_state_name
-        
+        print(f"DEBUG_PHYSICS_INIT: Initializing Physics with speed: {self.speed}, next_state_name: {self._next_state_name}") # <--- הוסף את זה
+
+        # print(f"------------ father  {self._next_state_name} ------------")
         # Physics לא צריך לנהל cooldowns. ה-State אחראי לזה.
         # self._state_started_time_ms: Optional[int] = None
         
@@ -83,9 +84,14 @@ class IdlePhysics(Physics):
 
 class MovePhysics(Physics):
     def __init__(self, start_cell: Tuple[int, int], board: Board,
-                 speed_m_s: float = 1.0, next_state_name: str = "idle",
+                 speed_m_s: float = 1.0, next_state_name: str = "long_rest",
                  start_pos_m: Optional[Tuple[float, float]] = None): # **הוסף פרמטר**
-        super().__init__(start_cell, board, speed_m_s, next_state_name)
+        # print(f"-----------------------next--- {next_state_name} --------------------------")
+        super().__init__(start_cell=start_cell,
+                         board=board,
+                         speed_m_s=speed_m_s, # חייב להעביר את זה!
+                         next_state_name=next_state_name)
+        print(f"DEBUG_MOVEPHYSICS_INIT: MovePhysics initialized with speed: {speed_m_s}, next_state_name: {next_state_name}") # <--- הוסף את זה
 
         if start_pos_m:
             self.cur_pos_m = start_pos_m
@@ -131,7 +137,7 @@ class MovePhysics(Physics):
         # print("[DEBUG] MovePhysics update called.")
         if self._is_movement_finished:
             return None
-
+        print(f"-------------------------- {self._next_state_name} --------------------------")
         if self.start_time_ms is None: # התנועה עדיין לא אותחלה
             return None
             
@@ -143,7 +149,6 @@ class MovePhysics(Physics):
             self.start_cell = self.end_cell # עדכן את תא ההתחלה להיות תא היעד
             self._is_movement_finished = True
             print(f"DEBUG MovePhysics.update(): Piece {self.cmd.piece_id} instant move to {self.get_cell()}.")
-            
             # כשה-MovePhysics מסיים, הוא מחזיר פקודה עם סוג המצב הבא
             return Command(
                 timestamp=dt,

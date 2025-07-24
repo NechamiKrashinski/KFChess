@@ -14,13 +14,17 @@ class PhysicsFactory:
         physics_cfg = cfg.get("physics", {})
         
         # Determine physics type based on 'type' key in config, defaulting to IdlePhysics
-        physics_type = physics_cfg.get("type", "IdlePhysics")
         
         # Common parameters that might be used by different physics types
-        speed_m_s = physics_cfg.get("speed_m_per_sec", 0.0) # Used for movement
+        speed_m_s = physics_cfg.get("speed_m_per_sec", 1.0) # Used for movement
         # next_state_when_finished should be passed to the specific physics object
-        next_state_name = physics_cfg.get("next_state_when_finished") 
-
+        next_state_name = physics_cfg.get("next_state_when_finished", "idle") 
+        physics_type = physics_cfg.get("type", "IdlePhysics")
+        print(f"===================== {next_state_name} =====================")
+        print(f"DEBUG_PF_2: PhysicsFactory.create received cfg: {cfg}")
+        print(f"DEBUG_PF_2: Extracted 'speed_m_per_sec': {speed_m_s}")
+        print(f"DEBUG_PF_2: Extracted 'next_state_when_finished': {next_state_name}")
+        print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!DEBUG_PF_2: Extracted 'type': {physics_type}")
         if physics_type == "MovePhysics":
             # For MovePhysics, speed_m_s is crucial
             return MovePhysics(

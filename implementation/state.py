@@ -11,7 +11,7 @@ import logging # הוספת לוגינג לדיבוג טוב יותר
 logger = logging.getLogger(__name__)
 # ניתן להגדיר רמת לוגינג (לדוגמה, DEBUG, INFO) וקונפיגורציה של פלט
 # logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(name)s:%(message)s')
-logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
+# logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 
 class State:
     def __init__(self, moves: Moves, graphics: Graphics, physics: Physics,
@@ -40,16 +40,16 @@ class State:
 
     
     def update(self, dt: float) -> 'State':
-        logger.debug(f"State {self._state_name} update called.")
+        # logger.debug(f"State {self._state_name} update called.")
         
         self._graphics.update(dt)
         physics_cmd = self._physics.update(dt) 
 
         # 1. טיפול במעבר שנוצר ע"י סיום פעולת פיזיקה (כמו סיום תנועה)
         if physics_cmd is not None:
-            logger.info(f"[{physics_cmd.piece_id if physics_cmd else 'N/A'}] "
-                        f"[State.update] Physics returned command type: {physics_cmd.type}. "
-                        f"Attempting transition to: {physics_cmd.type}")
+            # logger.info(f"[{physics_cmd.piece_id if physics_cmd else 'N/A'}] "
+                        # f"[State.update] Physics returned command type: {physics_cmd.type}. "
+                        # f"Attempting transition to: {physics_cmd.type}")
             
             target_state_template = self._transitions.get(physics_cmd.type) # <-- וודא שזה physics_cmd.type
             
@@ -74,7 +74,7 @@ class State:
                         next_state_name=new_state._next_state_when_finished_name
                     )
                 else:
-                    logger.warning(f"Unknown physics type for next state {new_state._state_name}. Cannot set initial position.")
+                    # logger.warning(f"Unknown physics type for next state {new_state._state_name}. Cannot set initial position.")
                     new_state_physics = new_state._physics 
                     
                 new_state_physics.cur_pos_m = final_pos_m 
@@ -82,11 +82,11 @@ class State:
                 
                 # **השינוי מתבצע כאן:**
                 new_state.reset(physics_cmd) # <-- העבר את הפקודה שהפיזיקה יצרה
-                logger.info(f"[{physics_cmd.piece_id if physics_cmd else 'N/A'}] "
-                            f"Successfully transitioned from '{self._state_name}' to '{new_state._state_name}' via physics command.")
+                # logger.info(f"[{physics_cmd.piece_id if physics_cmd else 'N/A'}] "
+                            # f"Successfully transitioned from '{self._state_name}' to '{new_state._state_name}' via physics command.")
                 return new_state
-            else:
-                logger.warning(f"Warning: Target state '{physics_cmd.type}' not found in transitions for physics command from '{self._state_name}'. Staying in current state.")
+            # else:
+            #     logger.warning(f"Warning: Target state '{physics_cmd.type}' not found in transitions for physics command from '{self._state_name}'. Staying in current state.")
         
         # 2. טיפול במעבר אוטומטי לאחר סיום גרפיקה ופיזיקה (למשל, מ-move ל-long_rest)
         # בלוק זה עשוי להיות כפילות אם הפיזיקה כבר מחזירה פקודה עם סוג המצב הבא.
@@ -97,9 +97,9 @@ class State:
         if self._state_name != "idle" and self._next_state_when_finished_name and \
            is_graphics_finished and is_physics_finished:
             
-            logger.info(f"[{self._current_command.piece_id if self._current_command else 'N/A'}] "
-                        f"[State.update] State '{self._state_name}' finished automatically! "
-                        f"Attempting transition to: {self._next_state_when_finished_name}")
+            # logger.info(f"[{self._current_command.piece_id if self._current_command else 'N/A'}] "
+            #             f"[State.update] State '{self._state_name}' finished automatically! "
+            #             f"Attempting transition to: {self._next_state_when_finished_name}")
             
             # **השינוי מתבצע כאן:**
             # הפקודה החדשה צריכה להתאים למצב הבא (לדוגמה, "long_rest")
@@ -139,92 +139,26 @@ class State:
                         next_state_name=new_state._next_state_when_finished_name
                     )
                 else:
-                    logger.warning(f"Unknown physics type for next state {new_state._state_name}. Cannot set initial position.")
+                    # logger.warning(f"Unknown physics type for next state {new_state._state_name}. Cannot set initial position.")
                     new_state_physics = new_state._physics
                     
                 new_state_physics.cur_pos_m = current_final_pos_m 
                 new_state._physics = new_state_physics 
                 
                 new_state.reset(new_command_for_next_state) # <-- העבר את הפקודה החדשה
-                logger.info(f"[{piece_id}] "
-                            f"Successfully transitioned from '{self._state_name}' to '{new_state._state_name}' automatically.")
+                # logger.info(f"[{piece_id}] "
+                            # f"Successfully transitioned from '{self._state_name}' to '{new_state._state_name}' automatically.")
                 return new_state
-            else:
-                logger.warning(f"Warning: Next state '{self._next_state_when_finished_name}' not found for automatic transition from '{self._state_name}'. Staying in current state.")
+            # else:
+            #     logger.warning(f"Warning: Next state '{self._next_state_when_finished_name}' not found for automatic transition from '{self._state_name}'. Staying in current state.")
 
         return self
 
-    def process_command(self, cmd: Command, now_ms: int) -> 'State':
-        self._current_command = cmd
-        logger.info(f"[{cmd.piece_id}] Processing command: {cmd.type} from state {self._state_name}")
-
-        # 1. טיפול מיוחד בפקודת "Move"
-        if cmd.type == "Move":
-            if self._state_name != "idle":
-                return self 
-
-            new_physics = self._physics.create_movement_to(
-                target_cell=tuple(cmd.params),
-                speed=self._physics.speed 
-            )
-            
-            move_state_template = self._transitions.get("move")
-            
-            if move_state_template:
-                new_state = copy.deepcopy(move_state_template)
-                
-                new_state._physics = new_physics
-                
-                new_state._graphics.loop = False 
-                new_state._graphics.reset(cmd=cmd) 
-                
-                new_state.reset(cmd) 
-                logger.info(f"[{cmd.piece_id}] Transitioning to 'move' state with target {cmd.params}.")
-                return new_state
-            else:
-                logger.error("Error: 'move' state template not found in transitions. Cannot initiate move.")
-                return self 
-        
-        # 2. טיפול בפקודת "Jump"
-        elif cmd.type == "Jump": 
-            if self._state_name != "idle":
-                logger.warning(f"[{cmd.piece_id}] Cannot jump from state '{self._state_name}'. Must be in 'idle' to jump.")
-                return self 
-
-            jump_physics = self._physics.create_movement_to( 
-                target_cell=tuple(cmd.params), 
-                speed=3.0 
-            )
-
-            jump_state_template = self._transitions.get("jump")
-            
-            if jump_state_template:
-                new_state = copy.deepcopy(jump_state_template)
-                new_state._physics = jump_physics
-                new_state._graphics.loop = False 
-                new_state._graphics.reset(cmd=cmd)
-                new_state.reset(cmd)
-                logger.info(f"[{cmd.piece_id}] Transitioning to 'jump' state with target {cmd.params}.")
-                return new_state
-            else:
-                logger.error("Error: 'jump' state template not found in transitions. Cannot initiate jump.")
-                return self
-
-        # 3. עבור פקודות אחרות (שאינן "Move" או "Jump")
-        next_state_template = self._transitions.get(cmd.type)
-        if next_state_template:
-            logger.info(f"[{cmd.piece_id}] Transitioning to: {cmd.type} state based on command.")
-            new_state = copy.deepcopy(next_state_template)
-            new_state.reset(cmd)
-            return new_state
-
-        logger.warning(f"[{cmd.piece_id}] No transition defined for command type: {cmd.type} from state {self._state_name}. Staying in current state.")
-        return self
 
     def process_command(self, cmd: Command, now_ms: int) -> 'State':
         # חתימה ללא שינוי: process_command(self, cmd, now_ms) -> 'State'
         self._current_command = cmd
-        logger.info(f"[{cmd.piece_id}] Processing command: {cmd.type} from state {self._state_name}")
+        # logger.info(f"[{cmd.piece_id}] Processing command: {cmd.type} from state {self._state_name}")
 
         # 1. טיפול מיוחד בפקודת "Move"
         if cmd.type == "Move":
@@ -253,17 +187,17 @@ class State:
                 new_state._graphics.reset(cmd=cmd) 
                 
                 new_state.reset(cmd) 
-                logger.info(f"[{cmd.piece_id}] Transitioning to 'move' state with target {cmd.params}.")
+                # logger.info(f"[{cmd.piece_id}] Transitioning to 'move' state with target {cmd.params}.")
                 return new_state
             else:
-                logger.error("Error: 'move' state template not found in transitions. Cannot initiate move.")
+                # logger.error("Error: 'move' state template not found in transitions. Cannot initiate move.")
                 return self 
         
         # 2. טיפול בפקודת "Jump" (בהתבסס על ההגדרה שלך)
         # זה דורש שיהיה מצב 'jump' מוגדר ב-transitions
         elif cmd.type == "Jump": 
             if self._state_name != "idle":
-                logger.warning(f"[{cmd.piece_id}] Cannot jump from state '{self._state_name}'. Must be in 'idle' to jump.")
+                # logger.warning(f"[{cmd.piece_id}] Cannot jump from state '{self._state_name}'. Must be in 'idle' to jump.")
                 return self # לא מאפשר קפיצה אם לא במצב idle
 
             # נניח שגם ל-Jump יש פיזיקה משלה שנוצרת באופן דומה
@@ -283,21 +217,21 @@ class State:
                 new_state._graphics.loop = False # קפיצה גם היא חד-פעמית
                 new_state._graphics.reset(cmd=cmd)
                 new_state.reset(cmd)
-                logger.info(f"[{cmd.piece_id}] Transitioning to 'jump' state with target {cmd.params}.")
+                # logger.info(f"[{cmd.piece_id}] Transitioning to 'jump' state with target {cmd.params}.")
                 return new_state
             else:
-                logger.error("Error: 'jump' state template not found in transitions. Cannot initiate jump.")
+                # logger.error("Error: 'jump' state template not found in transitions. Cannot initiate jump.")
                 return self
 
         # 3. עבור פקודות אחרות (שאינן "Move" או "Jump")
         next_state_template = self._transitions.get(cmd.type)
         if next_state_template:
-            logger.info(f"[{cmd.piece_id}] Transitioning to: {cmd.type} state based on command.")
+            # logger.info(f"[{cmd.piece_id}] Transitioning to: {cmd.type} state based on command.")
             new_state = copy.deepcopy(next_state_template)
             new_state.reset(cmd)
             return new_state
 
-        logger.warning(f"[{cmd.piece_id}] No transition defined for command type: {cmd.type} from state {self._state_name}. Staying in current state.")
+        # logger.warning(f"[{cmd.piece_id}] No transition defined for command type: {cmd.type} from state {self._state_name}. Staying in current state.")
         return self
 
     def can_transition(self, now_ms: int) -> bool:
