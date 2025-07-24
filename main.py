@@ -3,11 +3,22 @@
 import pathlib
 from implementation.game_builder import GameBuilder
 from implementation.game import Game
+import logging
+# הגדרת רמת לוגינג כללית ל-DEBUG
 
 def main():
+    logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(name)s:%(message)s')
+
+# אופציונלי: הגדר ספציפית עבור המודולים שלנו לוודא שמוצג הכל
+    logging.getLogger('implementation.piece_factory').setLevel(logging.DEBUG)
+    logging.getLogger('implementation.piece').setLevel(logging.DEBUG)
+    # logging.getLogger('implementation.state').setLevel(logging.DEBUG)
+    logging.getLogger('implementation.state').setLevel(logging.INFO)
+
     """
     Main entry point for the game application.
     """
+
     # 1. הגדרת נתיבים ופרמטרים
     ROOT_FOLDER = pathlib.Path(__file__).parent / "assets"
     BOARD_LAYOUT_FILE = "board.csv"

@@ -1,4 +1,5 @@
 import inspect
+import logging
 import pathlib
 import queue, threading, time, cv2, math
 from typing import List, Dict, Tuple, Optional
@@ -6,6 +7,7 @@ from .board import Board
 from .command import Command
 from .piece import Piece
 from .img import Img
+
 
 class InvalidBoard(Exception):
     ...
@@ -31,6 +33,17 @@ class Game:
         self.keyboard_cursor_thickness: int = 2
         self.keyboard_player_color: str = 'B' # צבע השחקן שמשחק עם המקלדת
 
+        # אתחול לוגינג כאן בבנאי של Game כדי לוודא רמת DEBUG
+        # זה חשוב ששורות הלוגינג יקראו לפני יצירת המופעים של PieceFactory, Piece, State
+        # אבל אם זה מוגדר כבר ב-main.py, אז זה בסדר.
+        # אם לא, כדאי להגדיר זאת ב-main.py לפני יצירת מופע Game
+        # לדוגמה:
+        # logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(name)s:%(message)s')
+        # logging.getLogger('implementation.piece_factory').setLevel(logging.DEBUG)
+        # logging.getLogger('implementation.piece').setLevel(logging.DEBUG)
+        # logging.getLogger('implementation.state').setLevel(logging.DEBUG)
+        # logging.getLogger('implementation.physics').setLevel(logging.DEBUG)
+
 
     def game_time_ms(self) -> int:
         """Return the current game time in milliseconds."""
@@ -50,7 +63,7 @@ class Game:
 
     def start_user_input_thread(self):
         """Start the user input thread for mouse handling. (No changes needed here for keyboard,
-           as keyboard events are handled in the main loop's cv2.waitKey)"""
+            as keyboard events are handled in the main loop's cv2.waitKey)"""
         thread = threading.Thread(target=self._mouse_handler_loop, daemon=True)
         thread.start()
 
@@ -66,7 +79,9 @@ class Game:
 
         self.start_user_input_thread()
 
-        start_ms = self.game_time_ms()
+        # עכשיו, במקום now_ms ב-on_command, נשתמש ב-game_time_ms()
+        # כי on_command מקבל timestamp, לא dt
+        start_ms = self.game_time_ms() 
         for p in self.pieces.values():
             cmd = Command(
                 timestamp=start_ms,
@@ -74,22 +89,47 @@ class Game:
                 type="init",
                 params=p.get_physics().get_pos()
             )
-            p.on_command(cmd, start_ms)
+            # יש לוודא ש-p.on_command מקבל גם הוא את ה-dt אם הוא מעביר אותו הלאה ל-State
+            # אבל נכון לעכשיו, הוא צריך לקבל את ה-timestamp.
+            p.on_command(cmd, start_ms) # שינוי: מעביר את ה-start_ms
+
+        # **השינויים הגדולים מתחילים כאן!**
+        last_frame_time_ms = self.game_time_ms() # זמן הפריימים הקודם במילוניות
+        FPS = 60 # מספר פריימים לשנייה
+        frame_time_limit_ms = 1000 / FPS # משך זמן מקסימלי לפריימים במילוניות
 
         while self.running:
-            now = self.game_time_ms()
+            current_time_ms = self.game_time_ms()
+            # חישוב time_delta: הזמן שחלף מאז הפריימ הקודם
+            dt_ms = current_time_ms - last_frame_time_ms
+            last_frame_time_ms = current_time_ms # עדכון זמן הפריימ הקודם
+
+            # המר dt_ms לשניות, כי מתודות הפיזיקה מצפות לשניות
+            dt_s = dt_ms / 1000.0 
 
             for p in self.pieces.values():
-                p.update(now)
+                # העברת ה-dt_s (time delta בשניות) לפונקציית העדכון של הכלי
+                p.update(dt_s) 
 
             while not self.user_input_queue.empty():
                 cmd: Command = self.user_input_queue.get()
-                self._process_input(cmd, now)
+                self._process_input(cmd, current_time_ms) # עדיף להעביר current_time_ms
 
-            self._draw(now)
+            self._draw(current_time_ms) # גם _draw יכול לקבל את הזמן הנוכחי ללוגיקה גרפית
+
             # _show() מטפל כעת גם בקלט מקלדת
+            # cv2.waitKey(1) כבר מכיל השהיה מינימלית
             if not self._show():
                 self.running = False
+
+            # **הגבלת קצב הפריימים**
+            # חישוב כמה זמן נותר להשהות כדי להגיע ל-FPS הרצוי
+            time_spent_in_frame_ms = self.game_time_ms() - current_time_ms
+            sleep_time_ms = max(0, frame_time_limit_ms - time_spent_in_frame_ms)
+            
+            # אם נשאר זמן, השהה את הלולאה
+            if sleep_time_ms > 0:
+                time.sleep(sleep_time_ms / 1000.0) # המר למילוניות לשניות עבור time.sleep
 
             if self._is_win():
                 break
@@ -171,6 +211,7 @@ class Game:
 
         else:
             piece_moving.on_command(cmd, now_ms)
+            
 
     def _draw(self, now_ms: int):
         """Draw the current game state, including the keyboard cursor."""
@@ -178,7 +219,9 @@ class Game:
 
         # ציור הכלים
         for p in self.pieces.values():
-            p.draw_on_board(cloned_board, now_ms)
+            # וודא ש-draw_on_board מקבל גם הוא את הזמן הנוכחי או את dt
+            # אם הוא משתמש בזה לאנימציה
+            p.draw_on_board(cloned_board, now_ms) 
 
         # --- ציור סמן המקלדת ---
         cursor_col, cursor_row = self.keyboard_cursor_cell
@@ -211,7 +254,7 @@ class Game:
     def _show(self) -> bool:
         """Show the current frame and handle window events, including keyboard input."""
         cv2.imshow("Board", self.current_frame)
-        key = cv2.waitKey(1) & 0xFF # קליטת מקש
+        key = cv2.waitKey(1) & 0xFF # קליטת מקש. cv2.waitKey(1) כבר מספק השהיה מינימלית (1ms)
 
         # --- טיפול בקלט מקלדת ---
         current_col, current_row = self.keyboard_cursor_cell
@@ -235,10 +278,6 @@ class Game:
                 moved = True
         elif key == 13: # Enter key
             self._handle_keyboard_action(self.keyboard_cursor_cell)
-
-        # השארת הדפסת קודי מקשים לבדיקה עתידית אם תרצה להוסיף תמיכה בחיצים שוב
-        # if key != 255 and key != 27:
-        #     print(f"Key pressed: {key}")
 
         if moved:
             print(f"Keyboard cursor moved to: {self.keyboard_cursor_cell}")

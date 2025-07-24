@@ -1,3 +1,4 @@
+import logging
 import pathlib
 import csv
 from typing import List, Dict, Tuple, Optional
@@ -7,6 +8,7 @@ from .game import Game
 from .piece import Piece
 from .piece_factory import PieceFactory
 from .img import Img
+
 
 class GameBuilder:
     def __init__(self, root_folder: pathlib.Path, 
@@ -56,15 +58,9 @@ class GameBuilder:
         pieces_data = self._read_board_layout(board_path)
         game_pieces: List[Piece] = []
         
-        piece_prototypes: Dict[str, Piece] = {}
-
         for piece_type, location in pieces_data:
-            if piece_type not in piece_prototypes:
-                prototype_piece = self.piece_factory.create_piece(piece_type, location)
-                piece_prototypes[piece_type] = prototype_piece
-            
-            piece = self.piece_factory.create_piece(piece_type, location)
-            game_pieces.append(piece)
+             piece = self.piece_factory.create_piece(piece_type, location)
+             game_pieces.append(piece)
 
         game = Game(game_pieces, self.board)
         
