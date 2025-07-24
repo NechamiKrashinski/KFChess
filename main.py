@@ -5,6 +5,7 @@ from implementation.game_builder import GameBuilder
 from implementation.game import Game
 
 def main():
+    
     """
     Main entry point for the game application.
     """

@@ -86,8 +86,16 @@ class MovePhysics(Physics):
             raise ValueError("Invalid command for MovePhysics: Params must be convertible to integers.")
 
         # כעת כש-end_cell מוגדר ובעל סוגים נכונים, ניתן לבצע חישובים
-        self.start_cell = self.get_cell() # קבל את התא הנוכחי לפני תחילת התנועה
-        
+        if cmd.source_cell: # אם תא המקור קיים בפקודה
+            self.start_cell = cmd.source_cell
+            self.cur_pos_m = (
+                self.start_cell[0] * self.board.cell_W_m,
+                self.start_cell[1] * self.board.cell_H_m
+            )
+        else:
+            # זהו קוד גיבוי/אזהרה למקרה ש-source_cell איכשהו חסר (לא אמור לקרות)
+            print(f"Warning: Command for {cmd.piece_id} (Move) is missing source_cell. Fallback to current physics cell.")
+            self.start_cell = self.get_cell() # חזרה להתנהגות הקודמת במקרה חירום
         dx = (self.end_cell[0] - self.start_cell[0]) * self.board.cell_W_m
         dy = (self.end_cell[1] - self.start_cell[1]) * self.board.cell_H_m
         self.vector_m = (dx, dy)
@@ -110,7 +118,7 @@ class MovePhysics(Physics):
 
             return Command(
                 timestamp=now_ms,
-                type=self._next_state_name,
+                type="finished_movement",
                 piece_id=self.cmd.piece_id,
                 params=self.cmd.params
             )

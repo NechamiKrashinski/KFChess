@@ -1,3 +1,5 @@
+# graphics.py
+
 import pathlib
 import time
 import copy
@@ -21,9 +23,11 @@ class Graphics:
         self.cur_index = 0
         self.last_frame_time: Optional[int] = None
         self.total_frames = 0
+        self.animation_finished = False
 
-        self._load_sprites()
+        self._load_sprites() # <-- הקריאה למתודה הזו
 
+    # הוסף את בלוק הקוד הבא חזרה למחלקה Graphics:
     def _load_sprites(self):
         """Load all PNG sprites from the sprites folder, sorted by filename."""
         files = sorted(self.sprites_folder.glob("*.png"))
@@ -39,64 +43,65 @@ class Graphics:
         if self.total_frames == 0:
             raise ValueError(f"No sprites found in: {self.sprites_folder}")
 
-    
     def copy(self):
-        """
-        יוצרת העתקה עמוקה של אובייקט Graphics זה.
-        מעתיקה את כל המאפיינים, ובמיוחד את רשימת ה-sprites באופן עמוק.
-        """
-        # יוצרים מופע Graphics חדש עם אותם פרמטרים בסיסיים
-        # חשוב שגם ה-board יהיה עותק, ולא הפניה לאותו אובייקט
-        # נניח שלמחלקה Board יש מתודת clone() או copy() משלה
-        new_board = self.board.clone() # או self.board.clone() אם זו המתודה הקיימת
+        # ... (שאר המתודה copy) ...
+        new_board = self.board.clone()
 
         new_graphics = Graphics(
-            sprites_folder=self.sprites_folder, # pathlib.Path הוא immutable, אז לא צריך deepcopy
+            sprites_folder=self.sprites_folder,
             board=new_board,
             loop=self.loop,
             fps=self.fps
         )
 
-        # מעתיקים את מצבי האנימציה
         new_graphics.cur_index = self.cur_index
         new_graphics.last_frame_time = self.last_frame_time
-        new_graphics.total_frames = self.total_frames # total_frames הוא רק מספר, לא צריך deepcopy
+        new_graphics.total_frames = self.total_frames
+        new_graphics.animation_finished = self.animation_finished
 
-        # החלק הקריטי: העתקה עמוקה של רשימת ה-sprites
         new_sprites: List[Img] = []
         for sprite in self.sprites:
-            # כאן אנחנו קוראים למתודת ה-copy() של כל אובייקט Img/MockImg
-            # וזו המתודה שבה וידאנו שיש self.img.copy() בתוך MockImg
-            new_sprites.append(sprite.copy()) # ודא שזו המתודה שאתה רוצה שתופעל (copy או clone)
-                                            # אם ב-MockImg קראת לה clone, שנה לכאן ל-sprite.clone()
+            new_sprites.append(sprite.copy())
         new_graphics.sprites = new_sprites
 
         return new_graphics
 
-
     def reset(self, cmd: Command):
-        """Reset animation state (start from frame 0)."""
+        # ... (שאר המתודה reset) ...
         self.cur_index = 0
         self.last_frame_time = cmd.timestamp
+        self.animation_finished = False
 
-    def update(self, now_ms: int):
-        """Advance animation frame based on elapsed time."""
+    def update(self, now_ms: int) -> Optional[Command]:
+        # ... (שאר המתודה update) ...
+        if self.animation_finished and not self.loop: 
+            return None 
+
         if self.last_frame_time is None:
             self.last_frame_time = now_ms
-            return
+            return None
 
         elapsed_ms = now_ms - self.last_frame_time
         frames_to_advance = int(elapsed_ms / (1000 / self.fps))
 
         if frames_to_advance > 0:
             self.cur_index += frames_to_advance
-            if self.loop:
-                self.cur_index %= self.total_frames
-            else:
-                self.cur_index = min(self.cur_index, self.total_frames - 1)
-
             self.last_frame_time = now_ms
 
+            if self.loop:
+                self.cur_index %= self.total_frames
+                return None
+            else:
+                if self.cur_index >= self.total_frames:
+                    self.cur_index = self.total_frames - 1
+                    if not self.animation_finished:
+                        self.animation_finished = True
+                        print(f"DEBUG: Graphics for {self.sprites_folder.name} finished animation at {now_ms}ms!") # הוסף את השורה הזו
+                        return None
+        return None
+    
+    def is_finished(self) -> bool: 
+        return self.animation_finished and not self.loop
+
     def get_img(self) -> Img:
-        """Return the current sprite image."""
         return self.sprites[self.cur_index]

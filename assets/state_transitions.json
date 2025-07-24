@@ -9,7 +9,7 @@
         "is_loop": true
       },
       "transitions": {
-        "move_triggered": "move",
+        "Move": "move",
         "jump_triggered": "jump"
       }
     },

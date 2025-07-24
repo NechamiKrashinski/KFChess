@@ -1,7 +1,8 @@
 import pathlib
-from typing import Dict, Tuple, List
 import json
-import copy
+import copy # שלב 1: הוסף ייבוא למודול copy
+
+from typing import Dict, Tuple, List
 
 from .board import Board
 from .graphics_factory import GraphicsFactory
@@ -19,8 +20,9 @@ class PieceFactory:
         self.state_machines: Dict[str, State] = {}
         self.graphics_factory = GraphicsFactory(board=self.board)
         self.physics_factory = PhysicsFactory(board=self.board)
+        # שלב 2: תכונה חדשה לאחסון נתוני הקונפיגורציה המלאים של מכונות המצבים
+        self._state_machine_config: Dict[str, Dict] = {} 
         self._load_piece_templates()
-
 
     def _load_piece_templates(self):
         """
@@ -54,12 +56,23 @@ class PieceFactory:
             
             # 2. Build the state machine for the piece
             initial_state_name = main_cfg.get("initial_state")
-            state_names = main_cfg.get("states", [])
+            # שלב 3: טען את קובץ המעברים המלא עבור סוג הכלי
+            state_transitions_path = pathlib.Path(r"C:\Users\user1\Documents\Bootcamp\KFChess\assets\state_transitions.json")
+
+            if not state_transitions_path.exists():
+                print(f"Error: states_transitions.json not found for piece '{piece_type}' at {state_transitions_path}")
+                continue # דלג על הכלי אם הקובץ חסר
+
+            with open(state_transitions_path, 'r') as f:
+                self._state_machine_config[piece_type] = json.load(f) # שמור את כל הקונפיגורציה
+
+            # עכשיו אנו קוראים את שמות המצבים מתוך ה-states_transitions.json
+            state_names = list(self._state_machine_config[piece_type].get("states", {}).keys())
             
             if initial_state_name and state_names:
                 state_machine = self._build_state_machine(
                     piece_dir=piece_dir,
-                    piece_type=piece_type,
+                    piece_type=piece_type, # העבר את piece_type
                     initial_state_name=initial_state_name,
                     state_names=state_names
                 )
@@ -68,7 +81,7 @@ class PieceFactory:
 
     def _build_state_machine(self,
                              piece_dir: pathlib.Path,
-                             piece_type: str,
+                             piece_type: str, # קבל את piece_type כארגומנט
                              initial_state_name: str,
                              state_names: List[str]) -> State:
         """
@@ -77,7 +90,7 @@ class PieceFactory:
         states_dir = piece_dir / "states"
         state_objects: Dict[str, State] = {}
         
-        # Stage 1: Create all State objects
+        # שלב 4.1: צור את כל אובייקטי ה-State אך ללא קישוריות עדיין
         for state_name in state_names:
             state_cfg_path = states_dir / state_name / "config.json"
             if not state_cfg_path.exists():
@@ -90,7 +103,7 @@ class PieceFactory:
                 sprites_dir=states_dir / state_name / "sprites",
                 cfg=cfg
             )
-            # Create a placeholder physics object. The real position is set in create_piece.
+            # צור אובייקט פיזיקה. המיקום האמיתי יוגדר ב-create_piece.
             physics = self.physics_factory.create(
                 start_cell=(0, 0),
                 cfg=cfg
@@ -102,24 +115,22 @@ class PieceFactory:
                 physics=physics
             )
 
-        # Stage 2: Link the states based on config
+        # שלב 4.2: קשר את המצבים ביניהם על בסיס ה-transitions מתוך ה-JSON המלא
+        # קבל את הקונפיגורציה המלאה של מכונת המצבים עבור סוג הכלי הנוכחי
+        full_state_config = self._state_machine_config.get(piece_type, {}).get("states", {})
+
         for state_name, state_obj in state_objects.items():
-            state_cfg_path = states_dir / state_name / "config.json"
-            with open(state_cfg_path, 'r') as f:
-                cfg = json.load(f)
+            state_data_from_json = full_state_config.get(state_name)
+            if state_data_from_json and "transitions" in state_data_from_json:
+                for event, target_state_name in state_data_from_json["transitions"].items():
+                    if target_state_name in state_objects:
+                        state_obj.set_transition(
+                            event=event,
+                            target=state_objects[target_state_name]
+                        )
+                    else:
+                        print(f"Warning: Target state '{target_state_name}' for event '{event}' in state '{state_name}' not found for piece type '{piece_type}'.")
             
-            next_state_name = cfg.get("physics", {}).get("next_state_when_finished")
-            if next_state_name and next_state_name in state_objects:
-                current_state_obj = state_objects[state_name]
-                next_state_obj = state_objects[next_state_name]
-                
-                # Use the command_type from the physics config as the event
-                # command_type = cfg.get("physics", {}).get("command_type", next_state_name)
-                current_state_obj.set_transition(
-                    event=next_state_name,
-                    target=next_state_obj
-                )
-        
         return state_objects.get(initial_state_name)
 
     def create_piece(self, p_type: str, cell: Tuple[int, int]) -> Piece:
@@ -129,16 +140,20 @@ class PieceFactory:
         if p_type not in self.state_machines:
             raise ValueError(f"Piece type '{p_type}' not found.")
 
-        # Create a deep copy of the state machine template
+        # צור עותק עמוק של תבנית מכונת המצבים, כולל כל המצבים והקישורים ביניהם
+        # חשוב להשתמש ב-deepcopy כדי לוודא שכל מופע של כלי מקבל מכונת מצבים נפרדת
+        # ולא הפניה לאותה מכונה משותפת.
         initial_state = copy.deepcopy(self.state_machines[p_type])
         
-        # Update the initial position on the physics object of the copied state
+        # עדכן את המיקום ההתחלתי על אובייקט הפיזיקה של המצב שהועתק
         initial_physics = initial_state.get_physics()
 
         initial_physics.cur_pos_m = (
             cell[0] * self.board.cell_W_m,
             cell[1] * self.board.cell_H_m
         )
+        # עדכן גם את start_cell כדי שהתנועה תתחיל מהתא הנכון
+        initial_physics.start_cell = cell
         
         return Piece(
             piece_id=f"{p_type}_{cell[0]}_{cell[1]}",

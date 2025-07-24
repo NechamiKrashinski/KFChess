@@ -7,3 +7,4 @@ class Command:
     piece_id: str
     type: str               # "Move" | "Jump" | …
     params: List            # payload (e.g. ["e2", "e4"])
+    source_cell: Optional[Tuple[int, int]] = None

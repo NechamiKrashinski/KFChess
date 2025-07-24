@@ -132,7 +132,8 @@ class Game:
                     timestamp=self.game_time_ms(),
                     piece_id=self.selected_piece_id,
                     type="Move",
-                    params=list(target_cell)
+                    params=list(target_cell),
+                    source_cell=self.selected_cell
                 )
                 self.user_input_queue.put(cmd)
                 print(f"Queued move command (Mouse): {self.selected_piece_id} → {target_cell}")
@@ -278,7 +279,8 @@ class Game:
                     timestamp=self.game_time_ms(),
                     piece_id=self.keyboard_selected_piece_id,
                     type="Move",
-                    params=list(target_cell)
+                    params=list(target_cell),
+                    source_cell=self.keyboard_cursor_cell
                 )
                 self.user_input_queue.put(cmd)
                 print(f"Queued move command (Keyboard): {self.keyboard_selected_piece_id} → {target_cell}")

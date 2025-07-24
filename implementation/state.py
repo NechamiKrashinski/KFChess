@@ -24,39 +24,53 @@ class State:
 
     def update(self, now_ms: int) -> 'State':
         self._graphics.update(now_ms)
-        cmd = self._physics.update(now_ms)
+        physics_cmd = self._physics.update(now_ms)
 
-        if cmd is not None:
-            return self.process_command(cmd, now_ms)
+        if physics_cmd is not None:
+            return self.process_command(physics_cmd, now_ms)
 
+        # print(f"DEBUG State: Current state is {self._graphics.sprites_folder.parent.name}") # יוסיף את שם המצב (לדוגמה 'long_rest')
+        # print(f"DEBUG State: _graphics.loop is {self._graphics.loop}")
+        # print(f"DEBUG State: _graphics.is_finished() is {self._graphics.is_finished()}")
+       
+        if not self._graphics.loop and self._graphics.is_finished():
+            piece_id = self._current_command.piece_id if self._current_command else "unknown"
+            print(f"DEBUG: State for piece {piece_id} detected graphics finished at {now_ms}ms. Issuing 'finished_rest' command.")
+            input("press Enter to continue...")  # הוסף שורה זו כדי להשהות את התוכנית ולראות את ההודעה
+            finished_rest_cmd = Command(
+                timestamp=now_ms,
+                type="finished_rest",
+                piece_id=piece_id,
+                params=[]
+            )
+            return self.process_command(finished_rest_cmd, now_ms)
+        
         return self
 
     def process_command(self, cmd: Command, now_ms: int) -> 'State':
-       
         self._current_command = cmd
-        # print(f"[{cmd.piece_id}] Command type: {cmd.type}")
-        print(f"[{cmd.piece_id}] transition: {self._current_command.type} → {cmd.type}")
-
-        if cmd.type == "Move":
-            new_physics = self._physics.create_movement_to(tuple(cmd.params))
-            new_state = State(
-                moves=self._moves,
-                graphics=self._graphics.copy(),
-                physics=new_physics
-            )
-            new_state.reset(cmd)
-            return new_state
-
+        
         next_state = self._transitions.get(cmd.type)
+        
         if next_state:
+            current_pos = self._physics.get_pos()
+            current_cell = self._physics.get_cell()
             next_state.reset(cmd)
+            next_state.get_physics().cur_pos_m = current_pos
+            next_state.get_physics().start_cell = current_cell
             return next_state
-
+        
         return self
 
 
     def can_transition(self, now_ms: int) -> bool:
-        return True
+        # לוגיקה זו תלויה בקונפיגורציה שלך. אם יש cooldown, יש לוודא שהכלי לא ב-cooldown
+        # לדוגמה, אם יש לך מצבי cooldown שמונעים מעבר, היישום כאן יכלול בדיקה זו.
+        # כרגע, תמיד מחזיר True, מה שאומר תמיד ניתן לעבור.
+        # אם הפיזיקה מדווחת שהיא עדיין בעיצומה (לדוגמה, MovePhysics עדיין בתנועה), אזי can_transition צריכה להיות False
+        # ניתן להוסיף: return self._physics.is_finished() (אם מתודה כזו קיימת ב-Physics)
+        return True # שינוי זה לא מטופל כרגע בקוד הקיים, אך הוא רלוונטי
+                    # עבור המערכת שתיארת בתיאור הבעיה המלא (לגבי cooldown)
 
     def get_command(self) -> Optional[Command]:
         return self._current_command
