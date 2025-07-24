@@ -21,6 +21,7 @@ class PieceFactory:
         self.physics_factory = PhysicsFactory(board=self.board)
         self._load_piece_templates()
 
+
     def _load_piece_templates(self):
         """
         Loads all piece configurations and state machines from the pieces directory.
