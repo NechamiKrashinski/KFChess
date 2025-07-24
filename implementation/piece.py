@@ -40,7 +40,7 @@ class Piece:
 
 
     def draw_on_board(self, board: Board, now_ms: int):
-        self.update(now_ms)
+        # self.update(now_ms)
 
         piece_img_obj = self._state.get_graphics().get_img()
         piece_img = piece_img_obj.img

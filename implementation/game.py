@@ -27,10 +27,9 @@ class Game:
         # --- מצב בחירת מקלדת ---
         self.keyboard_cursor_cell: Tuple[int, int] = (0, 0)
         self.keyboard_selected_piece_id: Optional[str] = None
-        self.keyboard_cursor_color: Tuple[int, int, int] = (255, 0, 0) # צהוב
+        self.keyboard_cursor_color: Tuple[int, int, int] = (255, 0, 0) 
         self.keyboard_cursor_thickness: int = 7
-        self.keyboard_player_color: str = 'B' # צבע השחקן שמשחק עם המקלדת
-
+        self.keyboard_player_color: str = 'B' 
 
     def game_time_ms(self) -> int:
         """Return the current game time in milliseconds."""
