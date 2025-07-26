@@ -15,6 +15,7 @@ class Piece:
 
     def on_command(self, cmd: Command, now_ms: int):
         if self.is_command_possible(cmd, now_ms):
+           
             self._state = self._state.process_command(cmd, now_ms)
             self._last_command_time = now_ms
 
@@ -29,12 +30,12 @@ class Piece:
 
     def update(self, now_ms: int):
         prev_state_name = self._state.get_graphics().sprites_folder.parent.name
-        print(f"[{self.piece_id}] Before update: Current state is {prev_state_name}, Graphics loop: {self._state.get_graphics().loop}, Graphics finished: {self._state.get_graphics().is_finished()}")
+        # print(f"[{self.piece_id}] Before update: Current state is {prev_state_name}, Graphics loop: {self._state.get_graphics().loop}, Graphics finished: {self._state.get_graphics().is_finished()}")
 
         self._state = self._state.update(now_ms)
         
         new_state_name = self._state.get_graphics().sprites_folder.parent.name
-        print(f"[{self.piece_id}] After update: New state is {new_state_name}, Graphics loop: {self._state.get_graphics().loop}, Graphics finished: {self._state.get_graphics().is_finished()}")
+        # print(f"[{self.piece_id}] After update: New state is {new_state_name}, Graphics loop: {self._state.get_graphics().loop}, Graphics finished: {self._state.get_graphics().is_finished()}")
         if prev_state_name != new_state_name:
             print(f"[{self.piece_id}] {prev_state_name} -> {new_state_name}")
 

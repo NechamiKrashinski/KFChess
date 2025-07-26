@@ -116,7 +116,7 @@ class Game:
                 if clicked_piece_id[1] == self.mouse_player_color: # נניח שהתו השני ב-ID הוא הצבע
                     self.selected_piece_id = clicked_piece_id
                     self.selected_cell = clicked_cell
-                    print(f"Mouse selected piece {clicked_piece_id} at {clicked_cell}")
+                    # print(f"Mouse selected piece {clicked_piece_id} at {clicked_cell}")
                 else:
                     print(f"Mouse cannot select opponent's piece: {clicked_piece_id}")
             else:
@@ -125,19 +125,28 @@ class Game:
             target_cell = clicked_cell
             piece = self.pieces[self.selected_piece_id]
             moves = piece.get_moves(list(self.pieces.values()))
-
-            if target_cell in moves:
+            if( target_cell == self.selected_cell ):
                 cmd = Command(
                     timestamp=self.game_time_ms(),
                     piece_id=self.selected_piece_id,
-                    type="Move",
-                    params=list(target_cell),
-                    source_cell=self.selected_cell
+                    type="Jump",
+                    params=list(target_cell)
                 )
                 self.user_input_queue.put(cmd)
-                print(f"Queued move command (Mouse): {self.selected_piece_id} → {target_cell}")
+                print(f"Queued jump command (Mouse): {self.selected_piece_id} → {target_cell}")
             else:
-                print(f"Illegal move for {self.selected_piece_id} → {target_cell}")
+                if target_cell in moves:
+                    cmd = Command(
+                        timestamp=self.game_time_ms(),
+                        piece_id=self.selected_piece_id,
+                        type="Move",
+                        params=list(target_cell),
+                        source_cell=self.selected_cell
+                    )
+                    self.user_input_queue.put(cmd)
+                else:
+                    print(f"Illegal move for {self.selected_piece_id} → {target_cell}")
+            # print(f"Queued move command (Mouse): {self.selected_piece_id} → {target_cell}")
 
             self.selected_piece_id = None
             self.selected_cell = None
@@ -168,7 +177,26 @@ class Game:
                     return # לא לבצע את המהלך
 
             piece_moving.on_command(cmd, now_ms)
+        
 
+        elif cmd.type == "Jump":
+            # input("Jump command received. This is a placeholder for future jump logic.")
+            target_cell = tuple(cmd.params)
+
+            piece_at_target_before_jump = None
+            for other_pid, other_piece in self.pieces.items():
+                if other_pid != piece_moving.piece_id and \
+                other_piece.get_physics().get_cell() == target_cell:
+                    piece_at_target_before_jump = other_piece
+                    break
+
+            if piece_at_target_before_jump:
+                # כאן מתבצעת הקפיצה על היריב
+                print(f"Piece {piece_moving.piece_id} jumped over {piece_at_target_before_jump.piece_id} at {target_cell}!")
+                del self.pieces[piece_at_target_before_jump.piece_id]
+            # input("Press Enter to continue...")  # Debugging line, can be removed later
+            # אין צורך להזיז את הכלי לקצה, הוא נשאר במקום שלו
+            piece_moving.on_command(cmd, now_ms)  # בצע את הקפיצה
         else:
             piece_moving.on_command(cmd, now_ms)
 
@@ -273,19 +301,28 @@ class Game:
             target_cell = cell_coords
             piece_to_move = self.pieces[self.keyboard_selected_piece_id]
             moves = piece_to_move.get_moves(list(self.pieces.values()))
-
-            if target_cell in moves:
+            
+            if(target_cell == self.keyboard_selected_piece_original_cell):
                 cmd = Command(
                     timestamp=self.game_time_ms(),
                     piece_id=self.keyboard_selected_piece_id,
-                    type="Move",
-                    params=list(target_cell),
-                    source_cell=self.keyboard_selected_piece_original_cell
+                    type="Jump",
+                    params=list(target_cell)
                 )
                 self.user_input_queue.put(cmd)
-                print(f"Queued move command (Keyboard): {self.keyboard_selected_piece_id} → {target_cell}")
             else:
-                print(f"Illegal move for {self.keyboard_selected_piece_id} → {target_cell} by keyboard.")
+                if target_cell in moves:
+                    cmd = Command(
+                        timestamp=self.game_time_ms(),
+                        piece_id=self.keyboard_selected_piece_id,
+                        type="Move",
+                        params=list(target_cell),
+                        source_cell=self.keyboard_selected_piece_original_cell
+                    )
+                    self.user_input_queue.put(cmd)
+                    print(f"Queued move command (Keyboard): {self.keyboard_selected_piece_id} → {target_cell}")
+                else:
+                    print(f"Illegal move for {self.keyboard_selected_piece_id} → {target_cell} by keyboard.")
 
             # איפוס הבחירה לאחר ניסיון הזזה
             self.keyboard_selected_piece_id = None

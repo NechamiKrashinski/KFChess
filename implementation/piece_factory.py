@@ -106,7 +106,8 @@ class PieceFactory:
             # צור אובייקט פיזיקה. המיקום האמיתי יוגדר ב-create_piece.
             physics = self.physics_factory.create(
                 start_cell=(0, 0),
-                cfg=cfg
+                cfg=cfg,
+                state = state_name
             )
 
             state_objects[state_name] = State(

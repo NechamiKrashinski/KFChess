@@ -10,7 +10,7 @@
       },
       "transitions": {
         "Move": "move",
-        "jump_triggered": "jump"
+        "Jump": "jump"
       }
     },
     "move": {
