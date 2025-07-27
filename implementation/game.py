@@ -163,7 +163,8 @@ class Game:
             piece_at_target_before_move = None
             for other_pid, other_piece in self.pieces.items():
                 if other_pid != piece_moving.piece_id and \
-                   other_piece.get_physics().get_cell() == target_cell:
+                   other_piece.get_physics().get_cell() == target_cell and \
+                    other_piece.is_vulnerable():  # לא לאכול כלי בתנועה
                     piece_at_target_before_move = other_piece
                     break
 
@@ -175,8 +176,8 @@ class Game:
                 else:
                     print(f"ERROR: {piece_moving.piece_id} tried to move to {target_cell} which is occupied by friendly piece {piece_at_target_before_move.piece_id}. This indicates a bug in move validation.")
                     return # לא לבצע את המהלך
-
             piece_moving.on_command(cmd, now_ms)
+
         
 
         elif cmd.type == "Jump":

@@ -107,3 +107,11 @@ class Piece:
         )
 
         return valid_moves
+
+    def is_vulnerable(self) -> bool:
+    # דוגמה: אם הפיזיקה מצביעה שהכלי לא בקפיצה, אז הוא פגיע
+         return not self._state.get_graphics().sprites_folder.parent.name == "jump"
+
+
+    def get_state(self) -> str:
+        return self._state.get_state()

@@ -113,7 +113,8 @@ class PieceFactory:
             state_objects[state_name] = State(
                 moves=self.moves_lib[piece_type],
                 graphics=graphics,
-                physics=physics
+                physics=physics,
+                state=state_name
             )
 
         # שלב 4.2: קשר את המצבים ביניהם על בסיס ה-transitions מתוך ה-JSON המלא
