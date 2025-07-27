@@ -3,12 +3,14 @@ import pathlib
 import csv
 from typing import List, Dict, Tuple, Optional
 
+from implementation.publish_subscribe.move_logger_display import MoveLoggerDisplay
+
 from .board import Board
 from .game import Game
 from .piece import Piece
 from .piece_factory import PieceFactory
 from .img import Img
-from .pubsub import EventManager # וודא שזה מיובא, אולי כבר קיים
+from .publish_subscribe.event_manager import EventManager # וודא שזה מיובא, אולי כבר קיים
 
 class GameBuilder:
     def __init__(self, root_folder: pathlib.Path, 
@@ -17,7 +19,7 @@ class GameBuilder:
                  board_image_file: str,
                  background_image_file: str,
                  screen_width: int, # <--- חדש: גודל מסך רוחב
-                 screen_height: int
+                 screen_height: int,
                  ): # חדש: פרמטר עבור קובץ הרקע הכללי
         self.root_folder = root_folder.resolve()
         self.screen_width = screen_width
@@ -41,7 +43,7 @@ class GameBuilder:
             H_cells=board_height,
             img=board_img
         )
-        
+
         # --- חדש: טעינה והכנה של תמונת הרקע הכללי ---
         self.background_img = Img() # שמור את אובייקט ה-Img של הרקע הכללי
         background_img_path = self.root_folder / background_image_file
@@ -57,6 +59,7 @@ class GameBuilder:
         
         # חדש: יצירת EventManager כאן
         self.event_manager = EventManager() 
+        self.move_logger_display = MoveLoggerDisplay(self.event_manager)  # יצירת MoveLoggerDisplay עם ה-event_manager
         # ניתן גם להעביר אותו כפרמטר ל-GameBuilder אם הוא נוצר ב-main.py
     
     def _read_board_layout(self, board_file: pathlib.Path) -> List[Tuple[str, Tuple[int, int]]]:
@@ -91,7 +94,7 @@ class GameBuilder:
             game_pieces.append(piece)
 
         # חדש: העבר את ה-event_manager ואת תמונת הרקע הכללי לאובייקט ה-Game
-        game = Game(game_pieces, self.board, self.event_manager, self.background_img) 
+        game = Game(game_pieces, self.board, self.event_manager, self.background_img,move_logger_display=self.move_logger_display) 
         game.screen_width = self.screen_width # הוסף את השורה הזו
         game.screen_height = self.screen_height
         return game

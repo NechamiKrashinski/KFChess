@@ -3,7 +3,8 @@ import pathlib
 import queue, threading, time, cv2, math
 from typing import List, Dict, Tuple, Optional
 
-from implementation.publish_subscribe.event_manager import EventManager, EventType # וודא ש-EventType מיובא
+from implementation.publish_subscribe.event_manager import EventManager, EventType
+from implementation.publish_subscribe.move_logger_display import MoveLoggerDisplay # וודא ש-EventType מיובא
 from .board import Board
 from .command import Command
 from .piece import Piece
@@ -13,7 +14,7 @@ class InvalidBoard(Exception):
     ...
 
 class Game:
-    def __init__(self, pieces: List[Piece], board: Board, event_manager: EventManager, background_img: Img):
+    def __init__(self, pieces: List[Piece], board: Board, event_manager: EventManager, background_img: Img,move_logger_display: MoveLoggerDisplay):
         """Initialize the game with pieces, board, and optional event bus."""
         self.board = board
         self.pieces: Dict[str, Piece] = {p.piece_id: p for p in pieces}
@@ -37,7 +38,7 @@ class Game:
 
         # הקצאת event_manager כעתה תכונה של המחלקה
         self.event_manager = event_manager 
-
+        self.move_logger_display = move_logger_display
     def game_time_ms(self) -> int:
         """Return the current game time in milliseconds."""
         return (time.time_ns() - self.start_time_ns) // 1_000_000
@@ -272,20 +273,17 @@ class Game:
 
     def _draw(self, now_ms: int):
         """
-        מצייר את מצב המשחק הנוכחי, כולל סמן המקלדת.
-        המתודה מציירת כעת את הרקע, לאחר מכן את הלוח עם הכלים והסמנים מעליו.
+        מצייר את מצב המשחק הנוכחי, כולל סמן המקלדת, יומן המהלכים והניקוד.
+        המתודה מציירת כעת את הרקע, לאחר מכן את הלוח עם הכלים והסמנים מעליו,
+        ולבסוף מפעילה את MoveLoggerDisplay לציור טקסטים.
         """
         # 1. מתחילים עם עותק של תמונת הרקע הכללית.
-        # זה יהיה ה"קנבס" הסופי שעליו נצייר את כל השאר.
-        # אנו משתמשים ב-copy() כדי לא לשנות את תמונת הרקע המקורית.
         final_display_img_obj = self.background_img.copy() 
 
         # 2. יוצרים עותק של הלוח. הלוח המשובט הזה יכיל את ציור הכלים והסמנים.
-        # ה-clone() של הלוח כבר דואג ליצור אובייקט Img חדש בתוך ה-Board.
         cloned_board = self.board.clone()
 
         # 3. ציור הכלים על הלוח המשובט.
-        # p.draw_on_board(cloned_board, now_ms) מבצע את הציור על cloned_board.img
         for p in self.pieces.values():
             p.draw_on_board(cloned_board, now_ms)
 
@@ -294,7 +292,7 @@ class Game:
         x_pix = cursor_col * self.board.cell_W_pix
         y_pix = cursor_row * self.board.cell_H_pix
 
-        cloned_board.img.draw_rectangle( # מצייר על ה-Img של הלוח המשובט
+        cloned_board.img.draw_rectangle( 
             x_pix, y_pix,
             self.board.cell_W_pix, self.board.cell_H_pix,
             self.keyboard_cursor_color,
@@ -308,21 +306,34 @@ class Game:
                 sel_col, sel_row = selected_piece.get_physics().get_cell()
                 sel_x_pix = sel_col * self.board.cell_W_pix
                 sel_y_pix = sel_row * self.board.cell_H_pix
-                cloned_board.img.draw_rectangle( # מצייר על ה-Img של הלוח המשובט
+                cloned_board.img.draw_rectangle( 
                     sel_x_pix, sel_y_pix,
                     self.board.cell_W_pix, self.board.cell_H_pix,
-                    (0, 0, 255), # צבע כחול לבחירת כלי מקלדת
+                    (0, 0, 255), 
                     3
                 )
         
         # 6. עכשיו, לאחר שכל הכלים והסמנים צויירו על cloned_board.img,
         # נדביק את ה-Img הזה על תמונת הרקע הסופית.
-        # בהנחה שהלוח ממוקם בפינה השמאלית העליונה (0,0) של חלון המשחק.
         board_width = cloned_board.img.get_width()
         board_height = cloned_board.img.get_height()
         board_x_on_screen = (self.screen_width - board_width) // 2
         board_y_on_screen = (self.screen_height - board_height) // 2
+        
+        # הדבקת הלוח (עם הכלים והסמנים שצויירו עליו) על תמונת הרקע.
         cloned_board.img.draw_on(final_display_img_obj, board_x_on_screen, board_y_on_screen)
+
+        # --- הוספה חדשה: קריאה למתודת ה-draw של MoveLoggerDisplay ---
+        # העברת התמונה שעליה מציירים (final_display_img_obj.img) ומימדי המסך והלוח
+        self.move_logger_display.draw(
+            display_img=final_display_img_obj.img,
+            display_width=self.screen_width,
+            display_height=self.screen_height,
+            board_x_offset=board_x_on_screen,
+            board_y_offset=board_y_on_screen,
+            board_width=board_width,
+            board_height=board_height
+        )
 
         # 7. שומרים את התמונה המורכבת הסופית ב-self.current_frame.
         self.current_frame = final_display_img_obj.img

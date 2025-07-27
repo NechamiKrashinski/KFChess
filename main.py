@@ -41,7 +41,8 @@ def main():
             board_image_file=BOARD_IMAGE_FILE,
             background_image_file=BACKGROUND_IMAGE_FILE,
             screen_width=FULL_SCREEN_WIDTH, 
-            screen_height=FULL_SCREEN_HEIGHT
+            screen_height=FULL_SCREEN_HEIGHT,
+
         )
         game: Game = game_builder.build_game(board_file=BOARD_LAYOUT_FILE)
         
@@ -50,7 +51,6 @@ def main():
         event_manager = game_builder.event_manager 
 
         # 1. יצירת מופעים של המאזינים
-        move_logger_display = MoveLoggerDisplay(event_manager) # הרישום מתבצע ב-__init__ שלו
         sound_subscriber = SoundSubscriber() # יצרנו אותו
 
         # 2. רישום ה-SoundSubscriber באופן מפורש
