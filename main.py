@@ -1,6 +1,8 @@
 # main.py
 
 import pathlib
+
+import pygame
 from implementation.game_builder import GameBuilder
 from implementation.game import Game
 
@@ -10,15 +12,20 @@ def main():
     Main entry point for the game application.
     """
     # 1. הגדרת נתיבים ופרמטרים
+
+    pygame.init()  # אתחול של pygame
+    infoObject = pygame.display.Info()
+    FULL_SCREEN_WIDTH = infoObject.current_w
+    FULL_SCREEN_HEIGHT = infoObject.current_h
     ROOT_FOLDER = pathlib.Path(__file__).parent / "assets"
     BOARD_LAYOUT_FILE = "board.csv"
     BOARD_IMAGE_FILE = "board.png"  # שם הקובץ של תמונת הלוח
-    
+    BACKGROUND_IMAGE_FILE = "background.jpg"
     # מימדי הלוח והתאים
     BOARD_WIDTH = 8
     BOARD_HEIGHT = 8
-    CELL_WIDTH_PIX = 100
-    CELL_HEIGHT_PIX = 100
+    CELL_WIDTH_PIX = 85
+    CELL_HEIGHT_PIX = 85
 
     try:
         # 2. בניית המשחק
@@ -28,7 +35,10 @@ def main():
             board_height=BOARD_HEIGHT,
             cell_width_pix=CELL_WIDTH_PIX,
             cell_height_pix=CELL_HEIGHT_PIX,
-            board_image_file=BOARD_IMAGE_FILE
+            board_image_file=BOARD_IMAGE_FILE,
+            background_image_file=BACKGROUND_IMAGE_FILE,
+            screen_width=FULL_SCREEN_WIDTH, 
+            screen_height=FULL_SCREEN_HEIGHT
         )
         game: Game = game_builder.build_game(board_file=BOARD_LAYOUT_FILE)
         

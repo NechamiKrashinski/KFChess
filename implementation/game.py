@@ -2,6 +2,8 @@ import inspect
 import pathlib
 import queue, threading, time, cv2, math
 from typing import List, Dict, Tuple, Optional
+
+from implementation.publish_subscribe.event_manager import EventManager
 from .board import Board
 from .command import Command
 from .piece import Piece
@@ -11,14 +13,16 @@ class InvalidBoard(Exception):
     ...
 
 class Game:
-    def __init__(self, pieces: List[Piece], board: Board):
+    def __init__(self, pieces: List[Piece], board: Board, event_manager: EventManager, background_img: Img):
         """Initialize the game with pieces, board, and optional event bus."""
         self.board = board
         self.pieces: Dict[str, Piece] = {p.piece_id: p for p in pieces}
         self.user_input_queue: queue.Queue = queue.Queue()
         self.start_time_ns = time.time_ns()
         self.running = True
-
+        self.background_img = background_img
+        self.screen_width: int = 0 
+        self.screen_height: int = 0
         # --- מצב בחירת עכבר ---
         self.selected_piece_id: Optional[str] = None
         self.selected_cell: Optional[Tuple[int, int]] = None
@@ -35,17 +39,7 @@ class Game:
         """Return the current game time in milliseconds."""
         return (time.time_ns() - self.start_time_ns) // 1_000_000
 
-    def clone_board(self) -> Board:
-        """Return a **brand-new** Board wrapping a copy of the background pixels."""
-        return Board(
-            cell_H_pix=self.board.cell_H_pix,
-            cell_W_pix=self.board.cell_W_pix,
-            cell_H_m=self.board.cell_H_m,
-            cell_W_m=self.board.cell_W_m,
-            W_cells=self.board.W_cells,
-            H_cells=self.board.H_cells,
-            img=self.board.img.copy()
-        )
+   
 
     def start_user_input_thread(self):
         """Start the user input thread for mouse handling. (No changes needed here for keyboard,
@@ -99,10 +93,25 @@ class Game:
     def _mouse_callback(self, event, x, y, flags, param):
         if event != cv2.EVENT_LBUTTONDOWN:
             return
-
-        col = x // self.board.cell_W_pix
-        row = y // self.board.cell_H_pix
-        clicked_cell = (col, row)
+        board_width = self.board.W_cells * self.board.cell_W_pix
+        board_height = self.board.H_cells * self.board.cell_H_pix
+        board_x_on_screen = (self.screen_width - board_width) // 2
+        board_y_on_screen = (self.screen_height - board_height) // 2
+          # --- התיקון המרכזי: הפחת את היסט הלוח מקואורדינטות העכבר ---
+        # x_relative_to_board = x - board_x_on_screen
+        # y_relative_to_board = y - board_y_on_screen
+        
+        col = (x - board_x_on_screen) // self.board.cell_W_pix
+        row = (y - board_y_on_screen) // self.board.cell_H_pix
+        
+        if not (0 <= col < self.board.W_cells and 0 <= row < self.board.H_cells):
+            print(f"Mouse click outside board: ({x}, {y}). Adjusted to: ({col}, {row}) but out of bounds.")
+            self.selected_piece_id = None # ביטול בחירה אם יצא מהלוח
+            self.selected_cell = None
+            return
+        
+        
+        clicked_cell = (col, row) 
 
         clicked_piece_id = None
         for pid, piece in self.pieces.items():
@@ -265,40 +274,61 @@ class Game:
             # בתוך הכלי אם הוא לא מגיע דרך get_physics().get_cell()
 
     def _draw(self, now_ms: int):
-        """Draw the current game state, including the keyboard cursor."""
-        cloned_board = self.clone_board()
+        """
+        מצייר את מצב המשחק הנוכחי, כולל סמן המקלדת.
+        המתודה מציירת כעת את הרקע, לאחר מכן את הלוח עם הכלים והסמנים מעליו.
+        """
+        # 1. מתחילים עם עותק של תמונת הרקע הכללית.
+        # זה יהיה ה"קנבס" הסופי שעליו נצייר את כל השאר.
+        # אנו משתמשים ב-copy() כדי לא לשנות את תמונת הרקע המקורית.
+        final_display_img_obj = self.background_img.copy() 
 
-        # ציור הכלים
+        # 2. יוצרים עותק של הלוח. הלוח המשובט הזה יכיל את ציור הכלים והסמנים.
+        # ה-clone() של הלוח כבר דואג ליצור אובייקט Img חדש בתוך ה-Board.
+        cloned_board = self.board.clone()
+
+        # 3. ציור הכלים על הלוח המשובט.
+        # p.draw_on_board(cloned_board, now_ms) מבצע את הציור על cloned_board.img
         for p in self.pieces.values():
             p.draw_on_board(cloned_board, now_ms)
 
-        # --- ציור סמן המקלדת ---
+        # 4. ציור סמן המקלדת על הלוח המשובט.
         cursor_col, cursor_row = self.keyboard_cursor_cell
         x_pix = cursor_col * self.board.cell_W_pix
         y_pix = cursor_row * self.board.cell_H_pix
 
-        cloned_board.img.draw_rectangle(
+        cloned_board.img.draw_rectangle( # מצייר על ה-Img של הלוח המשובט
             x_pix, y_pix,
             self.board.cell_W_pix, self.board.cell_H_pix,
             self.keyboard_cursor_color,
             self.keyboard_cursor_thickness
         )
 
-        # אם כלי נבחר באמצעות המקלדת, נצייר סמן נוסף עליו
+        # 5. ציור סמן הכלי הנבחר עם המקלדת על הלוח המשובט.
         if self.keyboard_selected_piece_id:
             selected_piece = self.pieces.get(self.keyboard_selected_piece_id)
             if selected_piece:
                 sel_col, sel_row = selected_piece.get_physics().get_cell()
                 sel_x_pix = sel_col * self.board.cell_W_pix
                 sel_y_pix = sel_row * self.board.cell_H_pix
-                cloned_board.img.draw_rectangle(
+                cloned_board.img.draw_rectangle( # מצייר על ה-Img של הלוח המשובט
                     sel_x_pix, sel_y_pix,
                     self.board.cell_W_pix, self.board.cell_H_pix,
-                    (0, 0, 255), # צבע אדום לבחירת כלי מקלדת
-                    3 # עובי
+                    (0, 0, 255), # צבע כחול לבחירת כלי מקלדת
+                    3
                 )
+        
+        # 6. עכשיו, לאחר שכל הכלים והסמנים צויירו על cloned_board.img,
+        # נדביק את ה-Img הזה על תמונת הרקע הסופית.
+        # בהנחה שהלוח ממוקם בפינה השמאלית העליונה (0,0) של חלון המשחק.
+        board_width = cloned_board.img.get_width()
+        board_height = cloned_board.img.get_height()
+        board_x_on_screen = (self.screen_width - board_width) // 2
+        board_y_on_screen = (self.screen_height - board_height) // 2
+        cloned_board.img.draw_on(final_display_img_obj, board_x_on_screen, board_y_on_screen)
 
-        self.current_frame = cloned_board.img.img
+        # 7. שומרים את התמונה המורכבת הסופית ב-self.current_frame.
+        self.current_frame = final_display_img_obj.img
 
     def _show(self) -> bool:
         """Show the current frame and handle window events, including keyboard input."""
