@@ -39,6 +39,7 @@
 
 #     config = {
 #         "id": "PB",
+#         "initial_state": "idle",
 #         "moves": "moves.txt",
 #         "transitions": {
 #             "idle": {"click": "idle"}
@@ -47,7 +48,21 @@
 #     }
 #     with open(pb_dir / "config.json", 'w') as f:
 #         json.dump(config, f)
-
+#     state_transitions_path = base_dir / "state_transitions.json" # נניח שזה המיקום
+#     state_transitions_data = {
+#         "states": {
+#             "idle": {
+#                 "transitions": {
+#                     "click": "idle"
+#                 },
+#                 "can_capture": True, # דוגמה למאפיינים
+#                 "can_be_captured": True
+#             }
+#             # אם יש לכם מצבים נוספים, הוסיפו אותם כאן
+#         }
+#     }
+#     with open(state_transitions_path, 'w') as f:
+#         json.dump(state_transitions_data, f)
 #     yield base_dir
 #     shutil.rmtree(base_dir)
 
@@ -82,7 +97,7 @@
 #     base_dir = Path(tempfile.mkdtemp())
 #     (base_dir / "PB").mkdir()
 #     factory = PieceFactory(dummy_board, base_dir)
-#     assert "PB" not in factory.templates
+#     assert "PB" not in factory.state_machines # <--- תיקון כאן
 #     shutil.rmtree(base_dir)
 
 # def test_no_sprites_in_state(temp_piece_dir, dummy_board):

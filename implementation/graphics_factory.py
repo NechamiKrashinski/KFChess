@@ -8,7 +8,6 @@ class GraphicsFactory:
         self.board = board
 
     def load(self, sprites_dir: pathlib.Path, cfg: dict) -> Graphics:
-        """Loads graphics from a sprites directory using the provided configuration."""
         if not sprites_dir.is_dir():
             raise FileNotFoundError(f"Sprites directory not found: {sprites_dir}")
 
