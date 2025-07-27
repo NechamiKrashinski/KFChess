@@ -151,6 +151,57 @@ class Game:
             self.selected_piece_id = None
             self.selected_cell = None
 
+    # def _process_input(self, cmd: Command, now_ms: int):
+    #     if cmd.piece_id not in self.pieces:
+    #         return
+
+    #     piece_moving = self.pieces[cmd.piece_id]
+
+    #     if cmd.type == "Move":
+    #         target_cell = tuple(cmd.params)
+
+    #         piece_at_target_before_move = None
+    #         for other_pid, other_piece in self.pieces.items():
+    #             if other_pid != piece_moving.piece_id and \
+    #                other_piece.get_physics().get_cell() == target_cell and \
+    #                 other_piece.is_vulnerable():  # לא לאכול כלי בתנועה
+    #                 piece_at_target_before_move = other_piece
+    #                 break
+
+    #         if piece_at_target_before_move:
+    #             # לוודא שאי אפשר לאכול כלי של אותו צבע
+    #             if piece_moving.piece_id[1] != piece_at_target_before_move.piece_id[1]:
+    #                 print(f"Piece {piece_moving.piece_id} captured {piece_at_target_before_move.piece_id} at {target_cell}!")
+    #                 del self.pieces[piece_at_target_before_move.piece_id]
+    #             else:
+    #                 print(f"ERROR: {piece_moving.piece_id} tried to move to {target_cell} which is occupied by friendly piece {piece_at_target_before_move.piece_id}. This indicates a bug in move validation.")
+    #                 return # לא לבצע את המהלך
+    #         piece_moving.on_command(cmd, now_ms)
+
+        
+
+    #     elif cmd.type == "Jump":
+    #         # input("Jump command received. This is a placeholder for future jump logic.")
+    #         target_cell = tuple(cmd.params)
+
+    #         piece_at_target_before_jump = None
+    #         for other_pid, other_piece in self.pieces.items():
+    #             if other_pid != piece_moving.piece_id and \
+    #             other_piece.get_physics().get_cell() == target_cell:
+    #                 piece_at_target_before_jump = other_piece
+    #                 break
+
+    #         if piece_at_target_before_jump:
+    #             # כאן מתבצעת הקפיצה על היריב
+    #             print(f"Piece {piece_moving.piece_id} jumped over {piece_at_target_before_jump.piece_id} at {target_cell}!")
+    #             del self.pieces[piece_at_target_before_jump.piece_id]
+    #         # input("Press Enter to continue...")  # Debugging line, can be removed later
+    #         # אין צורך להזיז את הכלי לקצה, הוא נשאר במקום שלו
+    #         piece_moving.on_command(cmd, now_ms)  # בצע את הקפיצה
+    #     # else:
+    #     #     piece_moving.on_command(cmd, now_ms)
+
+
     def _process_input(self, cmd: Command, now_ms: int):
         if cmd.piece_id not in self.pieces:
             return
@@ -160,10 +211,28 @@ class Game:
         if cmd.type == "Move":
             target_cell = tuple(cmd.params)
 
+            # --- לוגיקה חדשה: בדיקה אם הכלי הנע נכנס למשבצת "קופצת" של יריב ---
+            capturing_piece = None
+            for other_pid, other_piece in self.pieces.items():
+                if other_pid != piece_moving.piece_id and \
+                    other_piece.get_physics().get_cell() == target_cell and \
+                    other_piece.is_jump and \
+                    other_piece.piece_id[1] != piece_moving.piece_id[1]: # לוודא שזה כלי יריב
+                    capturing_piece = other_piece
+                    break
+
+            if capturing_piece:
+                print(f"Piece {piece_moving.piece_id} moved into {target_cell} and was captured by {capturing_piece.piece_id} (jump capture)!")
+                del self.pieces[piece_moving.piece_id] # הכלי הנע נאכל
+                capturing_piece.is_jump = False # מאפסים את דגל ה-jump של הכלי שקפץ
+                return # הכלי הנע לא מבצע את המהלך
+            # --- סוף לוגיקה חדשה ---
+
+            # לוגיקה קיימת: בדיקת אכילה רגילה (אם יש כלי יריב שעומד ב-target_cell)
             piece_at_target_before_move = None
             for other_pid, other_piece in self.pieces.items():
                 if other_pid != piece_moving.piece_id and \
-                   other_piece.get_physics().get_cell() == target_cell and \
+                    other_piece.get_physics().get_cell() == target_cell and \
                     other_piece.is_vulnerable():  # לא לאכול כלי בתנועה
                     piece_at_target_before_move = other_piece
                     break
@@ -175,31 +244,25 @@ class Game:
                     del self.pieces[piece_at_target_before_move.piece_id]
                 else:
                     print(f"ERROR: {piece_moving.piece_id} tried to move to {target_cell} which is occupied by friendly piece {piece_at_target_before_move.piece_id}. This indicates a bug in move validation.")
-                    return # לא לבצע את המהלך
+                    return  # לא לבצע את המהלך
+            
+            # אם לא נאכל (לא ב-"jump capture" ולא ב-"regular capture"), בצע את המהלך
             piece_moving.on_command(cmd, now_ms)
 
-        
 
         elif cmd.type == "Jump":
-            # input("Jump command received. This is a placeholder for future jump logic.")
-            target_cell = tuple(cmd.params)
-
-            piece_at_target_before_jump = None
-            for other_pid, other_piece in self.pieces.items():
-                if other_pid != piece_moving.piece_id and \
-                other_piece.get_physics().get_cell() == target_cell:
-                    piece_at_target_before_jump = other_piece
-                    break
-
-            if piece_at_target_before_jump:
-                # כאן מתבצעת הקפיצה על היריב
-                print(f"Piece {piece_moving.piece_id} jumped over {piece_at_target_before_jump.piece_id} at {target_cell}!")
-                del self.pieces[piece_at_target_before_jump.piece_id]
-            # input("Press Enter to continue...")  # Debugging line, can be removed later
+            # כאן, פעולת "Jump" רק מגדירה את הכלי כ"קופץ"
+            target_cell = tuple(cmd.params) # זהו המיקום הנוכחי של הכלי, בו הוא "ממתין"
+            
+            # הגדרת דגל ה-is_jump ל-True
+            piece_moving.is_jump = True
+            print(f"Piece {piece_moving.piece_id} is now in 'jump' state at {target_cell}.")
+            
             # אין צורך להזיז את הכלי לקצה, הוא נשאר במקום שלו
-            piece_moving.on_command(cmd, now_ms)  # בצע את הקפיצה
-        else:
+            # קריאה ל-on_command אם יש צורך לעדכן מצב פנימי אחר של הכלי הקופץ
             piece_moving.on_command(cmd, now_ms)
+            # ייתכן שתרצה שה-on_command של ה-Jump גם תאחסן את ה-target_cell
+            # בתוך הכלי אם הוא לא מגיע דרך get_physics().get_cell()
 
     def _draw(self, now_ms: int):
         """Draw the current game state, including the keyboard cursor."""
