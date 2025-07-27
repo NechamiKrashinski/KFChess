@@ -8,10 +8,8 @@ from .event_manager import EventManager, EventType # וודא ייבוא נכו�
 class SoundSubscriber:
     def __init__(self):
         pygame.mixer.init()
-        # הגדר נתיבים לקבצי הסאונד שלך
         self.sound_folder = pathlib.Path(__file__).parent.parent.parent / "assets" / "sounds"
         
-        # טען צלילים (ודא שהקבצים קיימים בנתיבים אלו!)
         try:
             self.move_sound = pygame.mixer.Sound(str(self.sound_folder / "move.wav"))
             self.capture_sound = pygame.mixer.Sound(str(self.sound_folder / "capture.wav"))

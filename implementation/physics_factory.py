@@ -14,8 +14,7 @@ class PhysicsFactory:
         next_state_name = physics_cfg.get("next_state_when_finished", "idle")
  
         if state == "move":
-            # אם המצב הוא תנועה, ניצור אובייקט MovePhysics
-           return MovePhysics(
+            return MovePhysics(
             start_cell=start_cell,
             board=self.board,
             speed_m_s=speed_m_s,

@@ -1,6 +1,6 @@
 import pathlib
 import json
-import copy # שלב 1: הוסף ייבוא למודול copy
+import copy 
 
 from typing import Dict, Tuple, List
 
@@ -20,7 +20,6 @@ class PieceFactory:
         self.state_machines: Dict[str, State] = {}
         self.graphics_factory = GraphicsFactory(board=self.board)
         self.physics_factory = PhysicsFactory(board=self.board)
-        # שלב 2: תכונה חדשה לאחסון נתוני הקונפיגורציה המלאים של מכונות המצבים
         self._state_machine_config: Dict[str, Dict] = {} 
         self._load_piece_templates()
 
@@ -56,23 +55,21 @@ class PieceFactory:
             
             # 2. Build the state machine for the piece
             initial_state_name = main_cfg.get("initial_state")
-            # שלב 3: טען את קובץ המעברים המלא עבור סוג הכלי
             state_transitions_path = pathlib.Path(r"C:\Users\user1\Documents\Bootcamp\KFChess\assets\state_transitions.json")
 
             if not state_transitions_path.exists():
                 print(f"Error: states_transitions.json not found for piece '{piece_type}' at {state_transitions_path}")
-                continue # דלג על הכלי אם הקובץ חסר
+                continue
 
             with open(state_transitions_path, 'r') as f:
-                self._state_machine_config[piece_type] = json.load(f) # שמור את כל הקונפיגורציה
+                self._state_machine_config[piece_type] = json.load(f)
 
-            # עכשיו אנו קוראים את שמות המצבים מתוך ה-states_transitions.json
             state_names = list(self._state_machine_config[piece_type].get("states", {}).keys())
             
             if initial_state_name and state_names:
                 state_machine = self._build_state_machine(
                     piece_dir=piece_dir,
-                    piece_type=piece_type, # העבר את piece_type
+                    piece_type=piece_type,
                     initial_state_name=initial_state_name,
                     state_names=state_names
                 )
@@ -81,7 +78,7 @@ class PieceFactory:
 
     def _build_state_machine(self,
                              piece_dir: pathlib.Path,
-                             piece_type: str, # קבל את piece_type כארגומנט
+                             piece_type: str,
                              initial_state_name: str,
                              state_names: List[str]) -> State:
         """
@@ -90,7 +87,6 @@ class PieceFactory:
         states_dir = piece_dir / "states"
         state_objects: Dict[str, State] = {}
         
-        # שלב 4.1: צור את כל אובייקטי ה-State אך ללא קישוריות עדיין
         for state_name in state_names:
             state_cfg_path = states_dir / state_name / "config.json"
             if not state_cfg_path.exists():
@@ -103,7 +99,6 @@ class PieceFactory:
                 sprites_dir=states_dir / state_name / "sprites",
                 cfg=cfg
             )
-            # צור אובייקט פיזיקה. המיקום האמיתי יוגדר ב-create_piece.
             physics = self.physics_factory.create(
                 start_cell=(0, 0),
                 cfg=cfg,
@@ -117,8 +112,6 @@ class PieceFactory:
                 state=state_name
             )
 
-        # שלב 4.2: קשר את המצבים ביניהם על בסיס ה-transitions מתוך ה-JSON המלא
-        # קבל את הקונפיגורציה המלאה של מכונת המצבים עבור סוג הכלי הנוכחי
         full_state_config = self._state_machine_config.get(piece_type, {}).get("states", {})
 
         for state_name, state_obj in state_objects.items():
@@ -142,23 +135,18 @@ class PieceFactory:
         if p_type not in self.state_machines:
             raise ValueError(f"Piece type '{p_type}' not found.")
 
-        # צור עותק עמוק של תבנית מכונת המצבים, כולל כל המצבים והקישורים ביניהם
-        # חשוב להשתמש ב-deepcopy כדי לוודא שכל מופע של כלי מקבל מכונת מצבים נפרדת
-        # ולא הפניה לאותה מכונה משותפת.
         initial_state = copy.deepcopy(self.state_machines[p_type])
         
-        # עדכן את המיקום ההתחלתי על אובייקט הפיזיקה של המצב שהועתק
         initial_physics = initial_state.get_physics()
 
         initial_physics.cur_pos_m = (
             cell[0] * self.board.cell_W_m,
             cell[1] * self.board.cell_H_m
         )
-        # עדכן גם את start_cell כדי שהתנועה תתחיל מהתא הנכון
         initial_physics.start_cell = cell
         
         return Piece(
             piece_id=f"{p_type}_{cell[0]}_{cell[1]}",
             init_state=initial_state,
-            color=p_type[1].upper(),  # נניח שהצבע הוא האות הראשונה של סוג הכלי
+            color=p_type[1].upper(),
         )

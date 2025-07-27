@@ -18,7 +18,7 @@ class Piece:
 
     def on_command(self, cmd: Command, now_ms: int):
         if self.is_command_possible(cmd, now_ms):
-           
+            
             self._state = self._state.process_command(cmd, now_ms)
             self._last_command_time = now_ms
 
@@ -33,19 +33,14 @@ class Piece:
 
     def update(self, now_ms: int):
         prev_state_name = self._state.get_graphics().sprites_folder.parent.name
-        # print(f"[{self.piece_id}] Before update: Current state is {prev_state_name}, Graphics loop: {self._state.get_graphics().loop}, Graphics finished: {self._state.get_graphics().is_finished()}")
-
         self._state = self._state.update(now_ms)
         
         new_state_name = self._state.get_graphics().sprites_folder.parent.name
-        # print(f"[{self.piece_id}] After update: New state is {new_state_name}, Graphics loop: {self._state.get_graphics().loop}, Graphics finished: {self._state.get_graphics().is_finished()}")
         if prev_state_name != new_state_name:
             print(f"[{self.piece_id}] {prev_state_name} -> {new_state_name}")
 
 
     def draw_on_board(self, board: Board, now_ms: int):
-        # self.update(now_ms)
-
         piece_img_obj = self._state.get_graphics().get_img()
         piece_img = piece_img_obj.img
 
@@ -112,8 +107,7 @@ class Piece:
         return valid_moves
 
     def is_vulnerable(self) -> bool:
-    # דוגמה: אם הפיזיקה מצביעה שהכלי לא בקפיצה, אז הוא פגיע
-         return not self._state.get_graphics().sprites_folder.parent.name == "jump"
+        return not self._state.get_graphics().sprites_folder.parent.name == "jump"
 
 
     def get_state(self) -> str:

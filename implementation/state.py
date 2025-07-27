@@ -25,24 +25,15 @@ class State:
 
     def update(self, now_ms: int) -> 'State':
         piece_id_for_debug = self._current_command.piece_id if self._current_command else "UNKNOWN_PIECE"
-        # print(f"[{piece_id_for_debug}] State.update() called. Current state: {self._graphics.sprites_folder.parent.name}")
-       
         
         self._graphics.update(now_ms)
         physics_cmd = self._physics.update(now_ms)
 
         if physics_cmd is not None:
-            # print(f"[{piece_id_for_debug}] State.update() - Physics emitted command: {physics_cmd.type}")
             return self.process_command(physics_cmd, now_ms)
 
-        # print(f"DEBUG State: Current state is {self._graphics.sprites_folder.parent.name}") # יוסיף את שם המצב (לדוגמה 'long_rest')
-        # print(f"DEBUG State: _graphics.loop is {self._graphics.loop}")
-        # print(f"DEBUG State: _graphics.is_finished() is {self._graphics.is_finished()}")
-       
         if not self._graphics.loop and self._graphics.is_finished():
             piece_id = self._current_command.piece_id if self._current_command else "unknown"
-            # print(f"DEBUG: State for piece {piece_id} detected graphics finished at {now_ms}ms. Issuing 'finished_rest' command.")
-            # input("press Enter to continue...")  # הוסף שורה זו כדי להשהות את התוכנית ולראות את ההודעה
             finished_rest_cmd = Command(
                 timestamp=now_ms,
                 type="finished_rest",
@@ -70,11 +61,7 @@ class State:
 
 
     def can_transition(self, now_ms: int) -> bool:
-        # if self._current_state is None:
-            return True
-        # print(f"DEBUG: State.can_transition() called for piece {self._current_command.piece_id} at {now_ms}ms. Current command type: {self._current_command.type}")
-        # return self._current_state == "Idle"  # שינוי זה לא מטופל כרגע בקוד הקיים, אך הוא רלוונטי
-                    # עבור המערכת שתיארת בתיאור הבעיה המלא (לגבי cooldown)
+        return True
 
     def get_command(self) -> Optional[Command]:
         return self._current_command

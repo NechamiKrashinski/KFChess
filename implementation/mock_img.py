@@ -1,4 +1,3 @@
-# implementation/mock_img.py
 import numpy as np
 import pathlib
 from typing import Optional, Tuple, Any
@@ -9,22 +8,18 @@ class MockImg(Img):
     _read_calls: list = []
     traj: list[tuple[int, int]] = []
     txt_traj: list[tuple[tuple[int, int], str]] = []
-    _instance_counter = 0 # מונה מופעים לבדיקה
+    _instance_counter = 0
 
     def __init__(self):
         super().__init__() 
         self.img: Optional[np.ndarray] = None 
-        MockImg._instance_counter += 1 # הגדל מונה
-        self._instance_id = MockImg._instance_counter # תן לכל מופע ID ייחודי
+        MockImg._instance_counter += 1
+        self._instance_id = MockImg._instance_counter
         print(f"MockImg __init__ called. Instance ID: {self._instance_id}")
 
     def read(self, path: pathlib.Path, target_size: Optional[Tuple[int, int]] = None):
         print(f"MockImg {self._instance_id} read called for path: {path}")
-        # אם target_size הוא None, אתה יכול להגדיר לו ערך ברירת מחדל או לזרוק שגיאה
-        # בהתאם ללוגיקה שאתה מצפה. כרגע, נניח שאם הוא None, נגדיר אותו ל- (50, 50)
-        # או שצריך לוודא שהוא תמיד מועבר בבדיקות.
         
-        # אם target_size יכול להיות None ואתה רוצה ברירת מחדל:
         effective_target_size = target_size if target_size is not None else (50, 50) 
         
         self.img = np.copy(np.zeros((effective_target_size[1], effective_target_size[0], 4), dtype=np.uint8))
@@ -41,7 +36,6 @@ class MockImg(Img):
             print(f"MockImg {new_copy._instance_id} copied img id={id(new_copy.img)}")
         return new_copy
 
-    # שאר המתודות נשארות כפי שהן:
     def draw_on(self, other_img: 'Img', x: int, y: int, alpha: float = 1.0):
         if self.img is None:
             raise ValueError("Cannot draw: current image is not loaded.")
@@ -78,7 +72,7 @@ class MockImg(Img):
         cls._read_calls = []
         cls.traj.clear()
         cls.txt_traj.clear()
-        cls._instance_counter = 0 # אפס גם את מונה המופעים
+        cls._instance_counter = 0
     
     @classmethod
     def get_read_calls(cls) -> list:

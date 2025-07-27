@@ -33,7 +33,7 @@ class Moves:
         The end_cell itself does not count as a block.
         """
         start_r, start_c = start_cell  # start_r is col, start_c is row
-        end_r, end_c = end_cell      # end_r is col, end_c is row
+        end_r, end_c = end_cell       # end_r is col, end_c is row
 
         # If it's a "no move" or one-step move, there are no intermediate cells to block
         if start_cell == end_cell or \
@@ -72,14 +72,14 @@ class Moves:
         return False # Should not be reached
 
     def get_moves(self,
-                     r: int, # This is actually column index based on tests
-                     c: int, # This is actually row index based on tests
-                     all_occupied_cells: List[Tuple[int, int]],
-                     occupied_enemy_cells: List[Tuple[int, int]],
-                     can_jump: bool,  # Only for knight
-                     piece_type: str,  # e.g., 'P', 'R', 'N', 'B', 'Q', 'K'
-                     my_color: str    # 'W' or 'B'
-                     ) -> List[Tuple[int, int]]:
+                  r: int, # This is actually column index based on tests
+                  c: int, # This is actually row index based on tests
+                  all_occupied_cells: List[Tuple[int, int]],
+                  occupied_enemy_cells: List[Tuple[int, int]],
+                  can_jump: bool,  # Only for knight
+                  piece_type: str,  # e.g., 'P', 'R', 'N', 'B', 'Q', 'K'
+                  my_color: str    # 'W' or 'B'
+                  ) -> List[Tuple[int, int]]:
 
         num_cols, num_rows = self.dims # Assuming dims are (cols, rows)
         valid_moves: List[Tuple[int, int]] = []

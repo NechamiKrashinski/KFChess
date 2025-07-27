@@ -1,5 +1,3 @@
-# graphics.py
-
 import pathlib
 import time
 import copy
@@ -25,11 +23,9 @@ class Graphics:
         self.total_frames = 0
         self.animation_finished = False
 
-        self._load_sprites() # <-- הקריאה למתודה הזו
+        self._load_sprites()
 
-    # הוסף את בלוק הקוד הבא חזרה למחלקה Graphics:
     def _load_sprites(self):
-        """Load all PNG sprites from the sprites folder, sorted by filename."""
         files = sorted(self.sprites_folder.glob("*.png"))
         
         target_size = (self.board.cell_W_pix, self.board.cell_H_pix)
@@ -44,7 +40,6 @@ class Graphics:
             raise ValueError(f"No sprites found in: {self.sprites_folder}")
 
     def copy(self):
-        # ... (שאר המתודה copy) ...
         new_board = self.board.clone()
 
         new_graphics = Graphics(
@@ -67,13 +62,11 @@ class Graphics:
         return new_graphics
 
     def reset(self, cmd: Command):
-        # ... (שאר המתודה reset) ...
         self.cur_index = 0
         self.last_frame_time = cmd.timestamp
         self.animation_finished = False
 
     def update(self, now_ms: int) -> Optional[Command]:
-        # ... (שאר המתודה update) ...
         if self.animation_finished and not self.loop: 
             return None 
 
@@ -96,8 +89,8 @@ class Graphics:
                     self.cur_index = self.total_frames - 1
                     if not self.animation_finished:
                         self.animation_finished = True
-                        print(f"DEBUG: Graphics for {self.sprites_folder.name} finished animation at {now_ms}ms!") # הוסף את השורה הזו
-                        return None
+                        print(f"DEBUG: Graphics for {self.sprites_folder.name} finished animation at {now_ms}ms!")
+                    return None
         return None
     
     def is_finished(self) -> bool: 
