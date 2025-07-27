@@ -8,19 +8,43 @@ class Img:
         self.img: Optional[np.ndarray] = None
 
     def read(self, path: pathlib.Path, target_size: Optional[Tuple[int, int]] = None):
-        """Reads an image from a given path and optionally resizes it."""
+        """
+        Reads an image from a given path and optionally resizes it.
+        Defaults to loading as BGR (3 channels) unless explicitly needing alpha.
+        """
         if not path.exists():
             raise FileNotFoundError(f"Image file not found at {path}")
-        self.img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        
+        # טען כתמונה עם 3 ערוצים (BGR) כברירת מחדל.
+        # אם יש ערוץ אלפא בקובץ, הוא יתעלם ממנו.
+        self.img = cv2.imread(str(path), cv2.IMREAD_COLOR) 
+        
         if self.img is None:
             raise ValueError(f"Could not read image from {path}. Check file format or corruption.")
 
-        if self.img.shape[2] == 3:
-            self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2BGRA)
-        elif self.img.shape[2] == 4:
-            pass
-        else:
-            raise ValueError(f"Unsupported image channel count: {self.img.shape[2]}")
+        # כעת התמונה היא בוודאות 3 ערוצים (BGR).
+        # אין צורך בהמרות ל-BGRA כאן, אלא אם כן תבחר במפורש לעבוד עם אלפא עבור כל התמונות.
+        # אם אתה רוצה שכל התמונות יהיו BGRA, שקול לטעון אותן כ-IMREAD_UNCHANGED 
+        # ולבצע המרה ל-BGRA רק אם הן BGR.
+        # אבל לרוב הציורים, BGR מספיק.
+
+        # --- השורות הבאות יוסרו או יתוקנו ע"פ ההחלטה האם לעבוד עם אלפא או BGR ---
+        # if self.img.shape[2] == 3:
+        #     self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2BGRA)
+        # elif self.img.shape[2] == 4:
+        #     pass
+        # else:
+        #     raise ValueError(f"Unsupported image channel count: {self.img.shape[2]}")
+        # ----------------------------------------------------------------------
+        
+        # וודא שהתמונה היא uint8
+        if self.img.dtype != np.uint8:
+            self.img = self.img.astype(np.uint8)
+
+        # וודא שהתמונה רציפה
+        if not self.img.flags['C_CONTIGUOUS']:
+            self.img = np.ascontiguousarray(self.img)
+
 
         if target_size:
             self.resize(target_size[0], target_size[1])
@@ -39,8 +63,29 @@ class Img:
         if self.img is None or other_img.img is None:
             return
 
-        h_src, w_src, _ = self.img.shape
-        h_dst, w_dst, _ = other_img.img.shape
+        # וודא ששתי התמונות הן BGR (3 ערוצים)
+        # אם אחת מהן נטענה בשחור-לבן, נמיר אותה ל-BGR לצורך פעולת ציור זו.
+        # זה טיפול בטוח כדי למנוע שגיאות shape.
+        if len(self.img.shape) == 2:
+            self.img = cv2.cvtColor(self.img, cv2.COLOR_GRAY2BGR)
+        if len(other_img.img.shape) == 2:
+            other_img.img = cv2.cvtColor(other_img.img, cv2.COLOR_GRAY2BGR)
+            
+        # וודא ששתי התמונות הן uint8
+        if self.img.dtype != np.uint8:
+            self.img = self.img.astype(np.uint8)
+        if other_img.img.dtype != np.uint8:
+            other_img.img = other_img.img.astype(np.uint8)
+            
+        # וודא ששתי התמונות רציפות
+        if not self.img.flags['C_CONTIGUOUS']:
+            self.img = np.ascontiguousarray(self.img)
+        if not other_img.img.flags['C_CONTIGUOUS']:
+            other_img.img = np.ascontiguousarray(other_img.img)
+
+
+        h_src, w_src, _ = self.img.shape # כעת בטוח שזה 3 ערוצים
+        h_dst, w_dst, _ = other_img.img.shape # כעת בטוח שזה 3 ערוצים
 
         x_dst_start = max(0, x)
         y_dst_start = max(0, y)
@@ -55,17 +100,17 @@ class Img:
         if x_dst_start >= x_dst_end or y_dst_start >= y_dst_end:
             return
 
+        # חשוב: אנחנו לא לוקחים ערוץ אלפא מהתמונה (כי הנחנו שהיא BGR)
+        # במקום זאת, נשתמש בפרמטר 'alpha' הכללי.
         roi_dst = other_img.img[y_dst_start:y_dst_end, x_dst_start:x_dst_end]
         roi_src = self.img[y_src_start:y_src_end, x_src_start:x_src_end]
 
-        alpha_src_channel = roi_src[:, :, 3] / 255.0
-        alpha_src_blended = alpha_src_channel * alpha
-        alpha_dst_blended = 1.0 - alpha_src_blended
-
-        for c in range(0, 3):
-            roi_dst[:, :, c] = (alpha_src_blended * roi_src[:, :, c] +
-                                alpha_dst_blended * roi_dst[:, :, c])
-
+        # --- השינוי העיקרי כאן: טיפול באלפא ללא ערוץ רביעי ---
+        # השתמש ב-cv2.addWeighted למיזוג אלפא פשוט בין שתי תמונות BGR.
+        # זה הרבה יותר בטוח ויעיל למיזוג ב-OpenCV.
+        # ה-alpha כאן הוא המשקל של התמונה הראשונה (roi_src), והשני (roi_dst) הוא 1.0 - alpha.
+        # ה-gamma הוא 0.0, וזו פשוט תוספת בהירות, נשתמש ב-0.
+        cv2.addWeighted(roi_src, alpha, roi_dst, 1.0 - alpha, 0.0, roi_dst)
     def resize(self, new_width: int, new_height: int):
         """Resizes the image to the specified new_width and new_height."""
         if self.img is None:
@@ -92,16 +137,25 @@ class Img:
 
     # --- פונקציה חדשה לציור מלבן (חדש) ---
     def draw_rectangle(self, x1: int, y1: int, width: int, height: int, color: Tuple[int, int, int], thickness: int):
-        """
-        Draws a rectangle on the image.
-        Args:
-            x1 (int): X-coordinate of the top-left corner.
-            y1 (int): Y-coordinate of the top-left corner.
-            width (int): Width of the rectangle.
-            height (int): Height of the rectangle.
-            color (Tuple[int, int, int]): BGR color tuple (e.g., (0, 255, 0) for green).
-            thickness (int): Thickness of the rectangle border. Use -1 for a filled rectangle.
-        """
-        if self.img is not None:
-            x2, y2 = x1 + width, y1 + height
-            cv2.rectangle(self.img, (x1, y1), (x2, y2), color, thickness)
+        if self.img is None:
+            print("Warning: Cannot draw rectangle on an uninitialized Img object.")
+            return
+
+        # 1. וודא שסוג הנתונים הוא np.uint8 (הסטנדרט לפיקסלים)
+        if self.img.dtype != np.uint8:
+            self.img = self.img.astype(np.uint8)
+
+        # 2. וודא שהמטריצה רציפה בזיכרון (מאוד חשוב ל-OpenCV)
+        if not self.img.flags['C_CONTIGUOUS']:
+            self.img = np.ascontiguousarray(self.img)
+
+        # 3. טיפול בערוצים: אם התמונה אפורה, המר ל-BGR.
+        # **כאן קטע הקוד של הטיפול ב-4 ערוצים צריך להיעלם,
+        # מכיוון שהנחנו ב-read() שכל התמונות יהיו BGR (3 ערוצים).**
+        if len(self.img.shape) == 2: # תמונה בשחור לבן/אפור
+            self.img = cv2.cvtColor(self.img, cv2.COLOR_GRAY2BGR)
+        # elif len(self.img.shape) == 3 and self.img.shape[2] == 4: # **REMOVE THIS BLOCK**
+        #    self.img = self.img[:, :, :3]
+
+        x2, y2 = x1 + width, y1 + height
+        cv2.rectangle(self.img, (x1, y1), (x2, y2), color, thickness)

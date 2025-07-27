@@ -3,7 +3,7 @@ import pathlib
 import queue, threading, time, cv2, math
 from typing import List, Dict, Tuple, Optional
 
-from implementation.publish_subscribe.event_manager import EventManager
+from implementation.publish_subscribe.event_manager import EventManager, EventType # וודא ש-EventType מיובא
 from .board import Board
 from .command import Command
 from .piece import Piece
@@ -35,15 +35,16 @@ class Game:
         self.keyboard_cursor_thickness: int = 7
         self.keyboard_player_color: str = 'B' 
 
+        # הקצאת event_manager כעתה תכונה של המחלקה
+        self.event_manager = event_manager 
+
     def game_time_ms(self) -> int:
         """Return the current game time in milliseconds."""
         return (time.time_ns() - self.start_time_ns) // 1_000_000
 
-   
-
     def start_user_input_thread(self):
         """Start the user input thread for mouse handling. (No changes needed here for keyboard,
-           as keyboard events are handled in the main loop's cv2.waitKey)"""
+            as keyboard events are handled in the main loop's cv2.waitKey)"""
         thread = threading.Thread(target=self._mouse_handler_loop, daemon=True)
         thread.start()
 
@@ -68,6 +69,9 @@ class Game:
                 params=p.get_physics().get_pos()
             )
             p.on_command(cmd, start_ms)
+        
+        # --- פרסום אירוע התחלת משחק ---
+        self.event_manager.publish(EventType.GAME_START)
 
         while self.running:
             now = self.game_time_ms()
@@ -80,7 +84,6 @@ class Game:
                 self._process_input(cmd, now)
 
             self._draw(now)
-            # _show() מטפל כעת גם בקלט מקלדת
             if not self._show():
                 self.running = False
 
@@ -97,7 +100,7 @@ class Game:
         board_height = self.board.H_cells * self.board.cell_H_pix
         board_x_on_screen = (self.screen_width - board_width) // 2
         board_y_on_screen = (self.screen_height - board_height) // 2
-          # --- התיקון המרכזי: הפחת את היסט הלוח מקואורדינטות העכבר ---
+            # --- התיקון המרכזי: הפחת את היסט הלוח מקואורדינטות העכבר ---
         # x_relative_to_board = x - board_x_on_screen
         # y_relative_to_board = y - board_y_on_screen
         
@@ -160,118 +163,112 @@ class Game:
             self.selected_piece_id = None
             self.selected_cell = None
 
-    # def _process_input(self, cmd: Command, now_ms: int):
-    #     if cmd.piece_id not in self.pieces:
-    #         return
-
-    #     piece_moving = self.pieces[cmd.piece_id]
-
-    #     if cmd.type == "Move":
-    #         target_cell = tuple(cmd.params)
-
-    #         piece_at_target_before_move = None
-    #         for other_pid, other_piece in self.pieces.items():
-    #             if other_pid != piece_moving.piece_id and \
-    #                other_piece.get_physics().get_cell() == target_cell and \
-    #                 other_piece.is_vulnerable():  # לא לאכול כלי בתנועה
-    #                 piece_at_target_before_move = other_piece
-    #                 break
-
-    #         if piece_at_target_before_move:
-    #             # לוודא שאי אפשר לאכול כלי של אותו צבע
-    #             if piece_moving.piece_id[1] != piece_at_target_before_move.piece_id[1]:
-    #                 print(f"Piece {piece_moving.piece_id} captured {piece_at_target_before_move.piece_id} at {target_cell}!")
-    #                 del self.pieces[piece_at_target_before_move.piece_id]
-    #             else:
-    #                 print(f"ERROR: {piece_moving.piece_id} tried to move to {target_cell} which is occupied by friendly piece {piece_at_target_before_move.piece_id}. This indicates a bug in move validation.")
-    #                 return # לא לבצע את המהלך
-    #         piece_moving.on_command(cmd, now_ms)
-
-        
-
-    #     elif cmd.type == "Jump":
-    #         # input("Jump command received. This is a placeholder for future jump logic.")
-    #         target_cell = tuple(cmd.params)
-
-    #         piece_at_target_before_jump = None
-    #         for other_pid, other_piece in self.pieces.items():
-    #             if other_pid != piece_moving.piece_id and \
-    #             other_piece.get_physics().get_cell() == target_cell:
-    #                 piece_at_target_before_jump = other_piece
-    #                 break
-
-    #         if piece_at_target_before_jump:
-    #             # כאן מתבצעת הקפיצה על היריב
-    #             print(f"Piece {piece_moving.piece_id} jumped over {piece_at_target_before_jump.piece_id} at {target_cell}!")
-    #             del self.pieces[piece_at_target_before_jump.piece_id]
-    #         # input("Press Enter to continue...")  # Debugging line, can be removed later
-    #         # אין צורך להזיז את הכלי לקצה, הוא נשאר במקום שלו
-    #         piece_moving.on_command(cmd, now_ms)  # בצע את הקפיצה
-    #     # else:
-    #     #     piece_moving.on_command(cmd, now_ms)
-
-
     def _process_input(self, cmd: Command, now_ms: int):
         if cmd.piece_id not in self.pieces:
             return
 
         piece_moving = self.pieces[cmd.piece_id]
+        original_cell = piece_moving.get_physics().get_cell() # שמור את התא המקורי לפני המהלך
 
+        # --- טיפול בפקודת "Move" ---
         if cmd.type == "Move":
             target_cell = tuple(cmd.params)
 
-            # --- לוגיקה חדשה: בדיקה אם הכלי הנע נכנס למשבצת "קופצת" של יריב ---
+            # 1. בדיקת הכאת "קפיצה" (Jump Capture)
+            # הכלי הנע נכנס למשבצת בה כלי יריב נמצא במצב "קופץ" וטורף אותו.
             capturing_piece = None
             for other_pid, other_piece in self.pieces.items():
                 if other_pid != piece_moving.piece_id and \
-                    other_piece.get_physics().get_cell() == target_cell and \
-                    other_piece.is_jump and \
-                    other_piece.piece_id[1] != piece_moving.piece_id[1]: # לוודא שזה כלי יריב
+                   other_piece.get_physics().get_cell() == target_cell and \
+                   other_piece.is_jump and \
+                   other_piece.piece_id[1] != piece_moving.piece_id[1]: # לוודא שזה כלי יריב
                     capturing_piece = other_piece
                     break
 
             if capturing_piece:
                 print(f"Piece {piece_moving.piece_id} moved into {target_cell} and was captured by {capturing_piece.piece_id} (jump capture)!")
+                
+                # פרסום אירוע הכאה מסוג "Jump Capture"
+                self.event_manager.publish(
+                    EventType.PIECE_CAPTURED,
+                    piece_color=capturing_piece.piece_id[1], # צבע הכלי שביצע את ההכאה (הקופץ)
+                    piece_type=capturing_piece.piece_id[0], # סוג הכלי שביצע את ההכאה
+                    from_coords=capturing_piece.get_physics().get_cell(), # מיקום הכלי הקופץ (לא זז, רק "טרף")
+                    to_coords=target_cell, # המיקום בו הכלי הנאכל עמד
+                    captured_piece_type=piece_moving.piece_id[0], # סוג הכלי הנאכל
+                    captured_piece_color=piece_moving.piece_id[1] # צבע הכלי הנאכל
+                )
+                
                 del self.pieces[piece_moving.piece_id] # הכלי הנע נאכל
                 capturing_piece.is_jump = False # מאפסים את דגל ה-jump של הכלי שקפץ
-                return # הכלי הנע לא מבצע את המהלך
-            # --- סוף לוגיקה חדשה ---
+                return # **חשוב**: אם הייתה הכאה, לא נמשיך לבצע את המהלך ולא נפרסם PIECE_MOVED
 
-            # לוגיקה קיימת: בדיקת אכילה רגילה (אם יש כלי יריב שעומד ב-target_cell)
+            # 2. בדיקת אכילה רגילה
+            # אם יש כלי יריב פגיע ב-target_cell, הכלי הנע יאכל אותו.
             piece_at_target_before_move = None
             for other_pid, other_piece in self.pieces.items():
                 if other_pid != piece_moving.piece_id and \
-                    other_piece.get_physics().get_cell() == target_cell and \
-                    other_piece.is_vulnerable():  # לא לאכול כלי בתנועה
+                   other_piece.get_physics().get_cell() == target_cell and \
+                   other_piece.is_vulnerable():  # אם הכלי פגיע (לא במצב קפיצה)
                     piece_at_target_before_move = other_piece
                     break
 
             if piece_at_target_before_move:
-                # לוודא שאי אפשר לאכול כלי של אותו צבע
+                # וודא שאי אפשר לאכול כלי של אותו צבע
                 if piece_moving.piece_id[1] != piece_at_target_before_move.piece_id[1]:
                     print(f"Piece {piece_moving.piece_id} captured {piece_at_target_before_move.piece_id} at {target_cell}!")
-                    del self.pieces[piece_at_target_before_move.piece_id]
+                    
+                    # פרסום אירוע הכאה מסוג "Regular Capture"
+                    self.event_manager.publish(
+                        EventType.PIECE_CAPTURED,
+                        piece_color=piece_moving.piece_id[1], # צבע הכלי שביצע את ההכאה
+                        piece_type=piece_moving.piece_id[0], # סוג הכלי שביצע את ההכאה
+                        from_coords=original_cell, # מיקום מוצא
+                        to_coords=target_cell, # מיקום יעד (שם הוכה הכלי)
+                        captured_piece_type=piece_at_target_before_move.piece_id[0], # סוג הכלי שהוכה
+                        captured_piece_color=piece_at_target_before_move.piece_id[1] # צבע הכלי שהוכה
+                    )
+                    
+                    del self.pieces[piece_at_target_before_move.piece_id] # הסרת הכלי שהוכה
+                    piece_moving.on_command(cmd, now_ms) # הכלי המבצע את ההכאה עדיין זז ליעד
+                    return # **חשוב**: אם הייתה הכאה, לא נמשיך לפרסם PIECE_MOVED
                 else:
                     print(f"ERROR: {piece_moving.piece_id} tried to move to {target_cell} which is occupied by friendly piece {piece_at_target_before_move.piece_id}. This indicates a bug in move validation.")
-                    return  # לא לבצע את המהלך
-            
-            # אם לא נאכל (לא ב-"jump capture" ולא ב-"regular capture"), בצע את המהלך
+                    return  # לא לבצע את המהלך אם זה כלי ידידותי
+
+            # 3. אם הגענו לכאן, לא התרחשה הכאה (לא "jump capture" ולא "regular capture").
+            # לכן, נבצע את המהלך ונפרסם אירוע "PIECE_MOVED".
             piece_moving.on_command(cmd, now_ms)
+            self.event_manager.publish(
+                EventType.PIECE_MOVED,
+                piece_color=piece_moving.piece_id[1], # צבע הכלי
+                piece_type=piece_moving.piece_id[0], # סוג הכלי
+                from_coords=original_cell, # מיקום מקור
+                to_coords=target_cell # מיקום יעד
+            )
 
-
+        # --- טיפול בפקודת "Jump" ---
         elif cmd.type == "Jump":
-            # כאן, פעולת "Jump" רק מגדירה את הכלי כ"קופץ"
+            # כאן, פעולת "Jump" רק מגדירה את הכלי כ"קופץ" (משנה את מצבו)
             target_cell = tuple(cmd.params) # זהו המיקום הנוכחי של הכלי, בו הוא "ממתין"
             
             # הגדרת דגל ה-is_jump ל-True
             piece_moving.is_jump = True
             print(f"Piece {piece_moving.piece_id} is now in 'jump' state at {target_cell}.")
             
-            # אין צורך להזיז את הכלי לקצה, הוא נשאר במקום שלו
-            # קריאה ל-on_command אם יש צורך לעדכן מצב פנימי אחר של הכלי הקופץ
+            # קריאה ל-on_command אם יש צורך לעדכן מצב פנימי אחר של הכלי הקופץ (לדוגמה, להשפיע על המצב הפיזיקלי)
             piece_moving.on_command(cmd, now_ms)
-            # ייתכן שתרצה שה-on_command של ה-Jump גם תאחסן את ה-target_cell
-            # בתוך הכלי אם הוא לא מגיע דרך get_physics().get_cell()
+            
+            # פרסום אירוע לכניסה למצב קפיצה.
+            # שימו לב: כאן השתמשתי ב-EventType.PIECE_JUMPED ולא ב-PIECE_JUMPED_STATE
+            # כפי שהצעתי קודם, מכיוון שזה נראה סביר יותר לתאר את האירוע,
+            # אך ודא שזה שם האירוע שהגדרת ב-EventType.
+            self.event_manager.publish(
+                EventType.PIECE_JUMPED, # וודא שזה תואם את ההגדרה ב-EventType
+                piece_color=piece_moving.piece_id[1],
+                piece_type=piece_moving.piece_id[0],
+                cell_coords=target_cell # המיקום שבו הכלי נמצא ונכנס למצב קפיצה
+            )
 
     def _draw(self, now_ms: int):
         """
@@ -358,10 +355,6 @@ class Game:
         elif key == 13: # Enter key
             self._handle_keyboard_action(self.keyboard_cursor_cell)
 
-        # השארת הדפסת קודי מקשים לבדיקה עתידית אם תרצה להוסיף תמיכה בחיצים שוב
-        # if key != 255 and key != 27:
-        #     print(f"Key pressed: {key}")
-
         if moved:
             print(f"Keyboard cursor moved to: {self.keyboard_cursor_cell}")
 
@@ -443,14 +436,23 @@ class Game:
         white_king_exists = 'W' in kings_on_board
         black_king_exists = 'B' in kings_on_board
 
+        winner_color: Optional[str] = None
         if not white_king_exists and black_king_exists:
+            winner_color = 'black'
             print("Game over! Black wins (White King captured)!")
         elif not black_king_exists and white_king_exists:
+            winner_color = 'white'
             print("Game over! White wins (Black King captured)!")
         elif not white_king_exists and not black_king_exists:
+            winner_color = 'draw' # או 'none'
             print("Game over! Both kings captured? It's a draw (or error).")
         else:
+            winner_color = 'none' # או 'undecided'
             print("Game over! It's a draw or an undecided state (both kings still on board).")
+
+        # --- פרסום אירוע סיום משחק ---
+        if winner_color:
+            self.event_manager.publish(EventType.GAME_END, winner=winner_color)
 
     def _get_all_pieces_on_board(self) -> List['Piece']:
         """Return a list of all pieces currently on the board."""

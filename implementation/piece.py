@@ -8,11 +8,13 @@ from .state import State
 from .moves import Moves
 
 class Piece:
-    def __init__(self, piece_id: str, init_state: State, is_jump = False):
+    def __init__(self, piece_id: str, init_state: State, color: str, is_jump = False):
         self.piece_id = piece_id
         self._state = init_state
         self._last_command_time = 0
         self.is_jump = is_jump
+        self.color = color
+        
 
     def on_command(self, cmd: Command, now_ms: int):
         if self.is_command_possible(cmd, now_ms):
@@ -116,3 +118,9 @@ class Piece:
 
     def get_state(self) -> str:
         return self._state.get_state()
+    
+    def get_color(self) -> str:
+        return self.color
+
+    def get_type_piece(self) -> str:
+        return self.piece_id[0].upper()

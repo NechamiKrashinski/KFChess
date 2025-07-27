@@ -5,9 +5,12 @@ import pathlib
 import pygame
 from implementation.game_builder import GameBuilder
 from implementation.game import Game
+# --- ייבוא המאזינים וה-EventManager וה-EventType ---
+from implementation.publish_subscribe.event_manager import EventType
+from implementation.publish_subscribe.move_logger_display import MoveLoggerDisplay
+from implementation.publish_subscribe.subscribers import SoundSubscriber # וודא שהנתיב נכון
 
 def main():
-    
     """
     Main entry point for the game application.
     """
@@ -42,6 +45,22 @@ def main():
         )
         game: Game = game_builder.build_game(board_file=BOARD_LAYOUT_FILE)
         
+        # --- *** זהו החלק החשוב שצריך להוסיף! *** ---
+        # גישה ל-event_manager שנוצר בתוך ה-GameBuilder
+        event_manager = game_builder.event_manager 
+
+        # 1. יצירת מופעים של המאזינים
+        move_logger_display = MoveLoggerDisplay(event_manager) # הרישום מתבצע ב-__init__ שלו
+        sound_subscriber = SoundSubscriber() # יצרנו אותו
+
+        # 2. רישום ה-SoundSubscriber באופן מפורש
+        # MoveLoggerDisplay נרשם כבר ב-__init__ שלו כשיוצרים אותו.
+        # SoundSubscriber צריך להירשם כאן, אלא אם כן שינית את ה-__init__ שלו כדי שירשם אוטומטית.
+        event_manager.subscribe(EventType.PIECE_MOVED, sound_subscriber.on_piece_moved_sound)
+        event_manager.subscribe(EventType.PIECE_CAPTURED, sound_subscriber.on_piece_captured_sound)
+        event_manager.subscribe(EventType.PIECE_JUMPED, sound_subscriber.on_piece_jumped_sound)
+        # --- *** סוף החלק החשוב שצריך להוסיף! *** ---
+
         # 3. הפעלת לולאת המשחק הראשית
         game.run()
 

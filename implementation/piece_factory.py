@@ -159,5 +159,6 @@ class PieceFactory:
         
         return Piece(
             piece_id=f"{p_type}_{cell[0]}_{cell[1]}",
-            init_state=initial_state
+            init_state=initial_state,
+            color=p_type[1].upper(),  # נניח שהצבע הוא האות הראשונה של סוג הכלי
         )
