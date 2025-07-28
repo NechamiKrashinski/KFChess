@@ -2,6 +2,7 @@ import pathlib
 import csv
 from typing import List, Tuple, Dict
 
+from implementation.publish_subscribe.message_display import MessageDisplay
 from implementation.publish_subscribe.move_logger_display import MoveLoggerDisplay
 
 from .board import Board
@@ -53,7 +54,8 @@ class GameBuilder:
         
         self.event_manager = EventManager() 
         self.move_logger_display = MoveLoggerDisplay(self.event_manager)
-    
+        self.message_display = MessageDisplay(self.event_manager)
+
     def _read_board_layout(self, board_file: pathlib.Path) -> List[Tuple[str, Tuple[int, int]]]:
         """Read the board layout from a CSV file that represents the board as a grid."""
         pieces_data = []
@@ -85,7 +87,7 @@ class GameBuilder:
             piece = self.piece_factory.create_piece(piece_type, location)
             game_pieces.append(piece)
 
-        game = Game(game_pieces, self.board, self.event_manager, self.background_img, move_logger_display=self.move_logger_display) 
+        game = Game(game_pieces, self.board, self.event_manager, self.background_img, move_logger_display=self.move_logger_display, message_display=self.message_display) 
         game.screen_width = self.screen_width
         game.screen_height = self.screen_height
         return game

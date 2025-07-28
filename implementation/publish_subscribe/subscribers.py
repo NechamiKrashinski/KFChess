@@ -42,9 +42,9 @@ class SoundSubscriber:
         if self.jump_sound:
             self.jump_sound.play()
             print(f"Sound played for PIECE_JUMPED: {piece_type} ({piece_color}) at {cell_coords}")
-class DisplaySubscriber:
-    def on_game_start(self):
-        print("Game started!")
+# class DisplaySubscriber:
+#     def on_game_start(self):
+#         print("Game started!")
 
-    def on_game_end(self, winner: str):
-        print(f"Game ended! Winner: {winner}")
+#     def on_game_end(self, winner: str):
+#         print(f"Game ended! Winner: {winner}")

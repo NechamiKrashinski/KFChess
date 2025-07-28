@@ -19,7 +19,8 @@ class EventManager:
         if event_type not in self.subscribers:
             self.subscribers[event_type] = []
         self.subscribers[event_type].append(subscriber)
-        print(f"DEBUG: Listener registered for {event_type.name} (Value: {event_type.value}) - {subscriber.__name__}")
+        listener_name = getattr(subscriber, '__name__', repr(subscriber))
+        print(f"DEBUG: Listener registered for {event_type.name} (Value: {event_type.value}) - {listener_name}")
         
     def publish(self, event_type: EventType, *args, **kwargs):
         if event_type in self.subscribers:

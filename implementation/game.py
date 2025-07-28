@@ -4,6 +4,7 @@ import queue, threading, time, cv2, math
 from typing import List, Dict, Tuple, Optional
 
 from implementation.publish_subscribe.event_manager import EventManager, EventType
+from implementation.publish_subscribe.message_display import MessageDisplay
 from implementation.publish_subscribe.move_logger_display import MoveLoggerDisplay 
 from .board import Board
 from .command import Command
@@ -14,7 +15,7 @@ class InvalidBoard(Exception):
     pass
 
 class Game:
-    def __init__(self, pieces: List[Piece], board: Board, event_manager: EventManager, background_img: Img, move_logger_display: MoveLoggerDisplay):
+    def __init__(self, pieces: List[Piece], board: Board, event_manager: EventManager, background_img: Img, move_logger_display: MoveLoggerDisplay,message_display: MessageDisplay):
         self.board = board
         self.pieces: Dict[str, Piece] = {p.piece_id: p for p in pieces}
         self.user_input_queue: queue.Queue = queue.Queue()
@@ -35,7 +36,7 @@ class Game:
 
         self.event_manager = event_manager 
         self.move_logger_display = move_logger_display
-
+        self.message_display = message_display
     def game_time_ms(self) -> int:
         return (time.time_ns() - self.start_time_ns) // 1_000_000
 
@@ -63,7 +64,7 @@ class Game:
             )
             p.on_command(cmd, start_ms)
         
-        self.event_manager.publish(EventType.GAME_START)
+        self.event_manager.publish(EventType.GAME_START, start_ms)
 
         while self.running:
             now = self.game_time_ms()
@@ -80,8 +81,23 @@ class Game:
                 self.running = False
 
             if self._is_win():
-                break
-
+                # לא לצאת מיד מהלולאה! במקום זאת, לטפל בסיום המשחק
+                print("Game._run: Win condition met, initiating game end sequence.")
+                self._announce_win() # קרא לזה כאן
+                # הגדר משך זמן להצגת הודעת הסיום לפני סגירה
+                end_game_display_start_time = now # זמן תחילת הצגת הודעת הסיום
+                end_game_display_duration = self.message_display.message_duration_ms + 1000 # תן קצת יותר זמן מהודעת הסיום עצמה
+                
+                # הישאר בלולאה כדי להציג את ההודעה
+                while self.game_time_ms() < end_game_display_start_time + end_game_display_duration:
+                    current_time_after_win = self.game_time_ms()
+                    self._draw(current_time_after_win)
+                    if not self._show(): # עדיין אפשר לסגור עם ESC
+                        self.running = False
+                        break # צא גם מלולאת ההשהיה
+                    time.sleep(0.01) # תן למעבד קצת מנוחה
+                
+                self.running = False # סיים את המשחק לאחר שההודעה הוצגה
         self._announce_win()
         cv2.destroyAllWindows()
 
@@ -112,7 +128,10 @@ class Game:
 
         if self.selected_piece_id is None:
             if clicked_piece_id:
-                if clicked_piece_id[1] == self.mouse_player_color:
+                # בדיקה: האם הכלי במצב idle
+                if self.pieces[clicked_piece_id].get_state() != 'idle':
+                    print(f"Cannot select {clicked_piece_id} because it's not idle.")
+                elif clicked_piece_id[1] == self.mouse_player_color:
                     self.selected_piece_id = clicked_piece_id
                     self.selected_cell = clicked_cell
                 else:
@@ -153,6 +172,11 @@ class Game:
         piece_moving = self.pieces[cmd.piece_id]
         original_cell = piece_moving.get_physics().get_cell()
 
+        # New check: if the piece is in long_rest state, ignore further processing
+        if piece_moving.get_state() != 'idle':
+            print(f"Piece {piece_moving.piece_id} is in long_rest state. Command ignored.")
+            return
+        print(f"piece_moving: {piece_moving.get_state()}, cmd: {cmd.type}, params: {cmd.params}")
         if cmd.type == "Move":
             target_cell = tuple(cmd.params)
 
@@ -283,7 +307,12 @@ class Game:
             board_width=board_width,
             board_height=board_height
         )
-
+        self.message_display.draw(
+            display_img=final_display_img_obj.img,
+            display_width=self.screen_width,
+            display_height=self.screen_height,
+            current_game_time_ms=now_ms
+        )
         self.current_frame = final_display_img_obj.img
 
     def _show(self) -> bool:
@@ -328,7 +357,10 @@ class Game:
 
         if self.keyboard_selected_piece_id is None:
             if clicked_piece_id:
-                if clicked_piece_id[1] == self.keyboard_player_color:
+                # בדיקה: האם הכלי במצב idle
+                if self.pieces[clicked_piece_id].get_state() != 'idle':
+                    print(f"Cannot select {clicked_piece_id} because it's not idle.")
+                elif clicked_piece_id[1] == self.keyboard_player_color:
                     self.keyboard_selected_piece_id = clicked_piece_id
                     self.keyboard_selected_piece_original_cell = cell_coords
                     print(f"Keyboard selected piece {clicked_piece_id} at {cell_coords}")
@@ -400,7 +432,7 @@ class Game:
             print("Game over! It's a draw or an undecided state (both kings still on board).")
 
         if winner_color:
-            self.event_manager.publish(EventType.GAME_END, winner=winner_color)
+            self.event_manager.publish(EventType.GAME_END, winner=winner_color, game_time_ms=self.game_time_ms())
 
     def _get_all_pieces_on_board(self) -> List['Piece']:
         return list(self.pieces.values())

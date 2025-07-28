@@ -23,7 +23,7 @@ def main():
     ROOT_FOLDER = pathlib.Path(__file__).parent / "assets"
     BOARD_LAYOUT_FILE = "board.csv"
     BOARD_IMAGE_FILE = "board.png"  # שם הקובץ של תמונת הלוח
-    BACKGROUND_IMAGE_FILE = "background.jpg"
+    BACKGROUND_IMAGE_FILE = "background.png"
     # מימדי הלוח והתאים
     BOARD_WIDTH = 8
     BOARD_HEIGHT = 8

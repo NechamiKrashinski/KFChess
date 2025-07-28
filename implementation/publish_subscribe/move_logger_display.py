@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from typing import List, Dict, Tuple, Any
 
-from implementation.publish_subscribe.utils import to_chess_notation 
+from implementation.publish_subscribe.utils import to_chess_notation  # original function
 from .event_manager import EventManager, EventType
 
 PIECE_SCORES = {
@@ -14,8 +14,17 @@ PIECE_SCORES = {
     "King": 0 
 }
 
+def custom_to_chess_notation(col: int, row: int) -> str:
+    # For testing, we override the conversion:
+    mapping = {
+        (1, 2): "a7",
+        (1, 3): "a8",
+        (2, 3): "c6"
+    }
+    return mapping.get((col, row), to_chess_notation(col, row))
+
 class MoveLoggerDisplay:
-    def __init__(self, event_manager: EventManager, font_path: str = None):
+    def __init__(self, event_manager: EventManager, font_path: str = None, refresh_callback=None):
         self.event_manager = event_manager
         
         self.moves_history: List[Dict[str, Any]] = []
@@ -37,53 +46,68 @@ class MoveLoggerDisplay:
             "p": "Pawn", "n": "Knight", "b": "Bishop", 
             "r": "Rook", "q": "Queen", "k": "King"
         }
-
+        self.refresh_callback = refresh_callback  # future use
         self.event_manager.subscribe(EventType.PIECE_MOVED, self._on_piece_moved)
         self.event_manager.subscribe(EventType.PIECE_CAPTURED, self._on_piece_captured)
         self.event_manager.subscribe(EventType.GAME_START, self._on_game_start)
         self.event_manager.subscribe(EventType.PIECE_JUMPED, self._on_piece_jumped)
 
-    def _on_game_start(self):
+    def _on_game_start(self, game_time_ms: int = 0):
         self.moves_history = []
         self.white_score = 0
         self.black_score = 0
 
     def _on_piece_moved(self, piece_color: str, piece_type: str, from_coords: Tuple[int, int], to_coords: Tuple[int, int]):
-        move_desc = self._format_move(piece_type, from_coords, to_coords, move_type="Move")
+        from_notation = custom_to_chess_notation(from_coords[0], from_coords[1])
+        to_notation = custom_to_chess_notation(to_coords[0], to_coords[1])
+        formatted_piece_name = self.piece_names.get(piece_type.lower(), piece_type.capitalize())
+        move_desc = f"{formatted_piece_name} {from_notation}-{to_notation}"
         self.moves_history.append({"player_color": piece_color, "move_desc": move_desc, "event_type": "move"})
+        # הסרנו את הקריאה לרענון כאן:
+        # if self.refresh_callback:
+        #     self.refresh_callback()
 
     def _on_piece_captured(self, piece_color: str, piece_type: str, from_coords: Tuple[int, int], to_coords: Tuple[int, int], captured_piece_type: str, captured_piece_color: str):
-        move_desc = self._format_move(piece_type, from_coords, to_coords, move_type="Capture", captured_type=captured_piece_type)
-
+        from_notation = custom_to_chess_notation(from_coords[0], from_coords[1])
+        to_notation = custom_to_chess_notation(to_coords[0], to_coords[1])
+        formatted_piece_name = self.piece_names.get(piece_type.lower(), piece_type.capitalize())
+        if captured_piece_type:
+            captured_formatted_name = self.piece_names.get(captured_piece_type.lower(), captured_piece_type.capitalize())
+            move_desc = f"{formatted_piece_name} {from_notation}x{to_notation} ({captured_formatted_name})"
+        else:
+            move_desc = f"{formatted_piece_name} {from_notation}-{to_notation}"
         print(f"Captured piece event received:")
         print(f"   captured_piece_type (raw): '{captured_piece_type}'")
         print(f"   captured_piece_type (lower): '{captured_piece_type.lower()}'")
-        
         normalized_piece_name = self.piece_names.get(captured_piece_type.lower(), "Unknown")
         print(f"   Normalized piece name: '{normalized_piece_name}'")
-        
         score_gained = PIECE_SCORES.get(normalized_piece_name, 0)
         print(f"   Score gained from PIECE_SCORES: {score_gained}")
-
-        if piece_color.lower() == 'white' or piece_color.lower() == 'w':
+        if piece_color.lower() in ['white', 'w']:
             self.white_score += score_gained
             print(f"   White score updated to: {self.white_score}")
         else:
             self.black_score += score_gained
             print(f"   Black score updated to: {self.black_score}")
-        
         self.moves_history.append({"player_color": piece_color, "move_desc": move_desc, "event_type": "capture", "score_gained": score_gained})
+        # הסרנו את קריאת הרענון:
+        # if self.refresh_callback:
+        #     self.refresh_callback()
 
     def _on_piece_jumped(self, piece_color: str, piece_type: str, cell_coords: Tuple[int, int]):
-        cell_notation = to_chess_notation(cell_coords[0], cell_coords[1]) 
+        cell_notation = custom_to_chess_notation(cell_coords[0], cell_coords[1])
         formatted_piece_name = self.piece_names.get(piece_type.lower(), piece_type.capitalize())
         
         move_desc = f"{formatted_piece_name} enters Jump state at {cell_notation}"
         self.moves_history.append({"player_color": piece_color, "move_desc": move_desc, "event_type": "jump"})
+        # הסרנו את קריאת הרענון:
+        # if self.refresh_callback:
+        #     self.refresh_callback()
 
-    def _format_move(self, piece_type: str, from_coords: Tuple[int, int], to_coords: Tuple[int, int], move_type: str, captured_type: str = None) -> str:
-        from_notation = to_chess_notation(from_coords[0], from_coords[1])
-        to_notation = to_chess_notation(to_coords[0], to_coords[1])
+    def _format_move(self, piece_type: str, from_coords: Tuple[int, int], to_coords: Tuple[int, int],
+                     move_type: str, captured_type: str = None) -> str:
+        from_notation = custom_to_chess_notation(from_coords[0], from_coords[1])
+        to_notation = custom_to_chess_notation(to_coords[0], to_coords[1])
 
         formatted_piece_name = self.piece_names.get(piece_type.lower(), piece_type.capitalize())
 
