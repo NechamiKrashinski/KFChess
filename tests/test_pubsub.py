@@ -1,11 +1,14 @@
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from implementation.publish_subscribe.event_manager import EventManager, EventType
 from implementation.publish_subscribe.move_logger_display import MoveLoggerDisplay
+from implementation.publish_subscribe.sound_subscriber import SoundSubscriber
+
 
 @pytest.fixture
 def event_manager():
     return EventManager()
+
 
 def test_subscribe(event_manager):
     mock_subscriber = Mock()
@@ -13,11 +16,12 @@ def test_subscribe(event_manager):
     assert EventType.GAME_START in event_manager.subscribers
     assert len(event_manager.subscribers[EventType.GAME_START]) == 1
 
+
 def test_publish_event_with_no_subscribers(event_manager, capsys):
     event_manager.publish(EventType.GAME_START)
     captured = capsys.readouterr().out
-    # בודקים שהפלט כולל בדיוק את ההודעה
     assert "DEBUG: No listeners registered for event type GAME_START (Value: 1)" in captured
+
 
 def test_publish_event_with_subscriber(event_manager):
     mock_subscriber = Mock()
@@ -25,21 +29,22 @@ def test_publish_event_with_subscriber(event_manager):
     event_manager.publish(EventType.GAME_START)
     mock_subscriber.assert_called_once()
 
+
 def test_publish_event_with_wrong_arguments(event_manager, capsys):
     mock_subscriber = Mock(side_effect=TypeError)
-    setattr(mock_subscriber, '__name__', 'mock_subscriber')  # NEW: להגדיר __name__ למוק
+    setattr(mock_subscriber, '__name__', 'mock_subscriber')
     event_manager.subscribe(EventType.GAME_START, mock_subscriber)
-    try:
-        event_manager.publish(EventType.GAME_START, "wrong_arg")
-    except TypeError:
-        pass  # לא צפוי להזריק, הקוד מטפל בשגיאה
+    
+    event_manager.publish(EventType.GAME_START, "wrong_arg")
+    
     captured = capsys.readouterr().out
-    # נוודא שהפלט מכיל את המחרוזת הרלוונטית
     assert "for GAME_START failed with arguments ('wrong_arg',), {}." in captured
+
 
 @pytest.fixture
 def move_logger(event_manager):
     return MoveLoggerDisplay(event_manager)
+
 
 def test_on_game_start(move_logger):
     move_logger._on_game_start()
@@ -47,18 +52,51 @@ def test_on_game_start(move_logger):
     assert move_logger.white_score == 0
     assert move_logger.black_score == 0
 
+
 def test_on_piece_moved(move_logger):
     move_logger._on_piece_moved('white', 'pawn', (1, 2), (1, 3))
     assert len(move_logger.moves_history) == 1
     assert move_logger.moves_history[0]['move_desc'] == 'Pawn a7-a8'
 
+
 def test_on_piece_captured(move_logger):
     move_logger._on_piece_captured('white', 'pawn', (1, 2), (1, 3), 'knight', 'black')
     assert len(move_logger.moves_history) == 1
-    # כעת ההודעה נוצרת כ"Pawn a7xa8 (Knight)" (ללא רווח אחרי ה־x)
     assert move_logger.moves_history[0]['move_desc'] == 'Pawn a7xa8 (Knight)'
+
 
 def test_on_piece_jumped(move_logger):
     move_logger._on_piece_jumped('black', 'knight', (2, 3))
     assert len(move_logger.moves_history) == 1
     assert move_logger.moves_history[0]['move_desc'] == 'Knight enters Jump state at c6'
+
+
+@pytest.fixture
+def sound_subscriber_with_mocks(event_manager):
+    with patch('pygame.mixer.Sound') as MockSoundConstructor:
+        subscriber = SoundSubscriber(event_manager)
+        yield subscriber, MockSoundConstructor 
+
+
+def test_sound_subscriber_on_piece_moved_sound(sound_subscriber_with_mocks):
+    subscriber, MockSoundConstructor = sound_subscriber_with_mocks
+    subscriber.on_piece_moved_sound('white', 'pawn', (1, 2), (1, 3))
+    MockSoundConstructor.return_value.play.assert_called_once()
+
+
+def test_sound_subscriber_on_piece_captured_sound(sound_subscriber_with_mocks):
+    subscriber, MockSoundConstructor = sound_subscriber_with_mocks
+    subscriber.on_piece_captured_sound('white', 'pawn', (1, 2), (1, 3), 'knight', 'black')
+    MockSoundConstructor.return_value.play.assert_called_once()
+
+
+def test_sound_subscriber_on_piece_jumped_sound(sound_subscriber_with_mocks):
+    subscriber, MockSoundConstructor = sound_subscriber_with_mocks
+    subscriber.on_piece_jumped_sound('white', 'knight', (2, 3))
+    MockSoundConstructor.return_value.play.assert_called_once()
+
+
+def test_sound_subscriber_on_illegal_move(sound_subscriber_with_mocks):
+    subscriber, MockSoundConstructor = sound_subscriber_with_mocks
+    subscriber.on_illegal_move()
+    MockSoundConstructor.return_value.play.assert_called_once()

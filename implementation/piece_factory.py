@@ -132,6 +132,7 @@ class PieceFactory:
         """
         Create a piece of the specified type at the given cell.
         """
+        print(f"{p_type}  {cell}------------------")
         if p_type not in self.state_machines:
             raise ValueError(f"Piece type '{p_type}' not found.")
 
@@ -150,3 +151,5 @@ class PieceFactory:
             init_state=initial_state,
             color=p_type[1].upper(),
         )
+    
+    

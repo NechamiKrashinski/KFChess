@@ -109,7 +109,9 @@ class Piece:
     def is_vulnerable(self) -> bool:
         return not self._state.get_graphics().sprites_folder.parent.name == "jump"
 
-
+    def get_self_state(self) -> State:
+        return self._state
+    
     def get_state(self) -> str:
         return self._state.get_state()
     
@@ -118,3 +120,5 @@ class Piece:
 
     def get_type_piece(self) -> str:
         return self.piece_id[0].upper()
+    
+    

@@ -3,9 +3,12 @@ import pathlib
 import queue, threading, time, cv2, math
 from typing import List, Dict, Tuple, Optional
 
+from implementation.graphics import Graphics
+from implementation.piece_factory import PieceFactory
 from implementation.publish_subscribe.event_manager import EventManager, EventType
 from implementation.publish_subscribe.message_display import MessageDisplay
-from implementation.publish_subscribe.move_logger_display import MoveLoggerDisplay 
+from implementation.publish_subscribe.move_logger_display import MoveLoggerDisplay
+from implementation.publish_subscribe.sound_subscriber import SoundSubscriber 
 from .board import Board
 from .command import Command
 from .piece import Piece
@@ -15,7 +18,7 @@ class InvalidBoard(Exception):
     pass
 
 class Game:
-    def __init__(self, pieces: List[Piece], board: Board, event_manager: EventManager, background_img: Img, move_logger_display: MoveLoggerDisplay,message_display: MessageDisplay):
+    def __init__(self, pieces: List[Piece], board: Board, event_manager: EventManager, background_img: Img, move_logger_display: MoveLoggerDisplay,message_display: MessageDisplay,sound_subscriber: SoundSubscriber,piece_factory:PieceFactory):
         self.board = board
         self.pieces: Dict[str, Piece] = {p.piece_id: p for p in pieces}
         self.user_input_queue: queue.Queue = queue.Queue()
@@ -37,6 +40,13 @@ class Game:
         self.event_manager = event_manager 
         self.move_logger_display = move_logger_display
         self.message_display = message_display
+        self.sound_subscriber = sound_subscriber
+
+
+
+        self.piece_factory = piece_factory
+    
+    
     def game_time_ms(self) -> int:
         return (time.time_ns() - self.start_time_ns) // 1_000_000
 
@@ -161,6 +171,12 @@ class Game:
                     )
                     self.user_input_queue.put(cmd)
                 else:
+                    self.event_manager.publish(
+                    EventType.ILLEGAL_MOVE,
+                    # piece_color=clicked_piece_id[1],
+                    # piece_type=clicked_piece_id[0],
+                    # cell_coords=
+                )
                     print(f"Illegal move for {self.selected_piece_id} → {target_cell}")
             self.selected_piece_id = None
             self.selected_cell = None
@@ -174,9 +190,17 @@ class Game:
 
         # New check: if the piece is in long_rest state, ignore further processing
         if piece_moving.get_state() != 'idle':
+            self.event_manager.publish(
+                EventType.ILLEGAL_MOVE,
+                # piece_color=piece_moving.piece_id[1],
+                # piece_type=piece_moving.piece_id[0],
+                # cell_coords=original_cell
+            )
             print(f"Piece {piece_moving.piece_id} is in long_rest state. Command ignored.")
             return
         print(f"piece_moving: {piece_moving.get_state()}, cmd: {cmd.type}, params: {cmd.params}")
+
+
         if cmd.type == "Move":
             target_cell = tuple(cmd.params)
 
@@ -188,7 +212,27 @@ class Game:
                    other_piece.piece_id[1] != piece_moving.piece_id[1]:
                     capturing_piece = other_piece
                     break
-
+            if piece_moving.piece_id[0] == 'P':
+                print(f"Pawn {piece_moving.piece_id} moving from {original_cell} to {target_cell}.")
+                if target_cell[1] == 7 or target_cell[1] == 0:  # עבור חייל לבן שהגיע לשורה 8
+                    # הפוך למלכה
+                    print(f" {cmd.source_cell[0]}  --- Pawn {piece_moving.piece_id} promoted to Queen at {target_cell}.")
+                    # piece_moving.piece_id = 'Q' + piece_moving.piece_id[1:]  # דוגמה להחלפת החייל במלכה
+                    # self._state = Graphics(sprites_folder=pathlib.Path('path_to_queen_sprites'), board=self.board)
+                    del self.pieces[piece_moving.piece_id]  # הסר את החייל
+                    queen = self.piece_factory.create_piece('Q'+piece_moving.piece_id[1], target_cell)
+                    if queen:
+                        self.pieces[queen.piece_id] = queen  # הוסף את המלכה החדשה
+                    else:
+                        print("errrrrrrrr")
+                # elif target_cell[1] == 0:  # עבור חייל שחור שהגיע לשורה 1
+                #       # הפוך למלכה
+                #     print(f" {cmd.source_cell}  ---Pawn {piece_moving.piece_id} promoted to Queen at {target_cell}.")
+                #     piece_moving.piece_id = 'Q' + piece_moving.piece_id[1:]  # דוגמה להחלפת החייל במלכה
+                #     del self.pieces[piece_moving.piece_id]  # הסר את החייל
+                #     queen = self.piece_factory.create_piece('Q'+piece_moving.piece_id[1], target_cell)
+                #     self.pieces[queen.piece_id] = queen  # הוסף את המלכה החדשה
+            
             if capturing_piece:
                 print(f"Piece {piece_moving.piece_id} moved into {target_cell} and was captured by {capturing_piece.piece_id} (jump capture)!")
                 
@@ -298,6 +342,13 @@ class Game:
         
         cloned_board.img.draw_on(final_display_img_obj, board_x_on_screen, board_y_on_screen)
 
+        
+        self.message_display.draw(
+            display_img=final_display_img_obj.img,
+            display_width=self.screen_width,
+            display_height=self.screen_height,
+            current_game_time_ms=now_ms
+        )
         self.move_logger_display.draw(
             display_img=final_display_img_obj.img,
             display_width=self.screen_width,
@@ -307,12 +358,7 @@ class Game:
             board_width=board_width,
             board_height=board_height
         )
-        self.message_display.draw(
-            display_img=final_display_img_obj.img,
-            display_width=self.screen_width,
-            display_height=self.screen_height,
-            current_game_time_ms=now_ms
-        )
+        # print(f"Game._draw: Displaying board at ({board_x_on_screen}, {board_y_on_screen}) with size ({board_width}, {board_height})")
         self.current_frame = final_display_img_obj.img
 
     def _show(self) -> bool:

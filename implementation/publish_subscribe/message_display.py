@@ -130,12 +130,4 @@ class MessageDisplay:
         final_segment = cv2.add(img_bg, img_fg)
         image[y1_target:y2_target, x1_target:x2_target] = final_segment
 
-        # הסר את קוד ציור המלבן האדום
-        # debug_rect_color = (0, 0, 255)
-        # debug_rect_size = 10 
-        # if y1_target + debug_rect_size < y2_target and x1_target + debug_rect_size < x2_target:
-        #     cv2.rectangle(image, 
-        #                   (x1_target, y1_target), 
-        #                   (x1_target + debug_rect_size, y1_target + debug_rect_size), 
-        #                   debug_rect_color, -1)
-        # print(f"DEBUG: draw_sharp_text - Attempted to draw debug rectangle at ({x1_target}, {y1_target})")
+        

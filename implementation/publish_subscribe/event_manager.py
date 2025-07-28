@@ -10,6 +10,7 @@ class EventType(Enum):
     PIECE_MOVED = 3
     PIECE_CAPTURED = 4
     PIECE_JUMPED = 5
+    ILLEGAL_MOVE = 6
 
 class EventManager:
     def __init__(self):

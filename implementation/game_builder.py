@@ -4,6 +4,7 @@ from typing import List, Tuple, Dict
 
 from implementation.publish_subscribe.message_display import MessageDisplay
 from implementation.publish_subscribe.move_logger_display import MoveLoggerDisplay
+from implementation.publish_subscribe.sound_subscriber import SoundSubscriber
 
 from .board import Board
 from .game import Game
@@ -55,6 +56,7 @@ class GameBuilder:
         self.event_manager = EventManager() 
         self.move_logger_display = MoveLoggerDisplay(self.event_manager)
         self.message_display = MessageDisplay(self.event_manager)
+        self.sound_subscriber = SoundSubscriber(self.event_manager)
 
     def _read_board_layout(self, board_file: pathlib.Path) -> List[Tuple[str, Tuple[int, int]]]:
         """Read the board layout from a CSV file that represents the board as a grid."""
@@ -87,7 +89,7 @@ class GameBuilder:
             piece = self.piece_factory.create_piece(piece_type, location)
             game_pieces.append(piece)
 
-        game = Game(game_pieces, self.board, self.event_manager, self.background_img, move_logger_display=self.move_logger_display, message_display=self.message_display) 
+        game = Game(game_pieces, self.board, self.event_manager, self.background_img, move_logger_display=self.move_logger_display, message_display=self.message_display, sound_subscriber=self.sound_subscriber,piece_factory=self.piece_factory) 
         game.screen_width = self.screen_width
         game.screen_height = self.screen_height
         return game

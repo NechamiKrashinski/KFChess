@@ -133,3 +133,4 @@
 #         piece = factory.create_piece("PB", (0, 0))
 
 #     assert piece._state.get_graphics() is not None
+
