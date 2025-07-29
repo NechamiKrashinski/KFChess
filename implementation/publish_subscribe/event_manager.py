@@ -2,7 +2,7 @@
 
 from enum import Enum
 from typing import Callable, Any
-import inspect # ייבוא נוסף לצורך inspect.signature
+import inspect 
 
 class EventType(Enum):
     GAME_START = 1

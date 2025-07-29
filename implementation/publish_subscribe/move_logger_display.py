@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from typing import List, Dict, Tuple, Any
 
-from implementation.publish_subscribe.utils import to_chess_notation  # original function
+from implementation.publish_subscribe.utils import to_chess_notation
 from .event_manager import EventManager, EventType
 
 PIECE_SCORES = {
@@ -11,11 +11,10 @@ PIECE_SCORES = {
     "Bishop": 3,
     "Rook": 5,
     "Queen": 9,
-    "King": 0 
+    "King": 0
 }
 
 def custom_to_chess_notation(col: int, row: int) -> str:
-    # For testing, we override the conversion:
     mapping = {
         (1, 2): "a7",
         (1, 3): "a8",
@@ -31,22 +30,22 @@ class MoveLoggerDisplay:
         self.white_score = 0
         self.black_score = 0
 
-        self.font = cv2.FONT_HERSHEY_COMPLEX 
-        self.font_scale = 1.0 
-        self.font_thickness = 2 
-        self.text_color = (255, 255, 255) 
-        self.highlight_color = (0, 255, 255) 
-        self.padding_y = 10 
+        self.font = cv2.FONT_HERSHEY_COMPLEX
+        self.font_scale = 1.0
+        self.font_thickness = 2
+        self.text_color = (255, 255, 255)
+        self.highlight_color = (0, 255, 255)
+        self.padding_y = 10
 
-        self.upscale_factor = 3 
+        self.upscale_factor = 3
 
         self.piece_names = {
             "pawn": "Pawn", "knight": "Knight", "bishop": "Bishop",
             "rook": "Rook", "queen": "Queen", "king": "King",
-            "p": "Pawn", "n": "Knight", "b": "Bishop", 
+            "p": "Pawn", "n": "Knight", "b": "Bishop",
             "r": "Rook", "q": "Queen", "k": "King"
         }
-        self.refresh_callback = refresh_callback  # future use
+        self.refresh_callback = refresh_callback
         self.event_manager.subscribe(EventType.PIECE_MOVED, self._on_piece_moved)
         self.event_manager.subscribe(EventType.PIECE_CAPTURED, self._on_piece_captured)
         self.event_manager.subscribe(EventType.GAME_START, self._on_game_start)
@@ -63,9 +62,6 @@ class MoveLoggerDisplay:
         formatted_piece_name = self.piece_names.get(piece_type.lower(), piece_type.capitalize())
         move_desc = f"{formatted_piece_name} {from_notation}-{to_notation}"
         self.moves_history.append({"player_color": piece_color, "move_desc": move_desc, "event_type": "move"})
-        # הסרנו את הקריאה לרענון כאן:
-        # if self.refresh_callback:
-        #     self.refresh_callback()
 
     def _on_piece_captured(self, piece_color: str, piece_type: str, from_coords: Tuple[int, int], to_coords: Tuple[int, int], captured_piece_type: str, captured_piece_color: str):
         from_notation = custom_to_chess_notation(from_coords[0], from_coords[1])
@@ -76,23 +72,15 @@ class MoveLoggerDisplay:
             move_desc = f"{formatted_piece_name} {from_notation}x{to_notation} ({captured_formatted_name})"
         else:
             move_desc = f"{formatted_piece_name} {from_notation}-{to_notation}"
-        print(f"Captured piece event received:")
-        print(f"   captured_piece_type (raw): '{captured_piece_type}'")
-        print(f"   captured_piece_type (lower): '{captured_piece_type.lower()}'")
+        
         normalized_piece_name = self.piece_names.get(captured_piece_type.lower(), "Unknown")
-        print(f"   Normalized piece name: '{normalized_piece_name}'")
         score_gained = PIECE_SCORES.get(normalized_piece_name, 0)
-        print(f"   Score gained from PIECE_SCORES: {score_gained}")
+        
         if piece_color.lower() in ['white', 'w']:
             self.white_score += score_gained
-            print(f"   White score updated to: {self.white_score}")
         else:
             self.black_score += score_gained
-            print(f"   Black score updated to: {self.black_score}")
         self.moves_history.append({"player_color": piece_color, "move_desc": move_desc, "event_type": "capture", "score_gained": score_gained})
-        # הסרנו את קריאת הרענון:
-        # if self.refresh_callback:
-        #     self.refresh_callback()
 
     def _on_piece_jumped(self, piece_color: str, piece_type: str, cell_coords: Tuple[int, int]):
         cell_notation = custom_to_chess_notation(cell_coords[0], cell_coords[1])
@@ -100,9 +88,6 @@ class MoveLoggerDisplay:
         
         move_desc = f"{formatted_piece_name} enters Jump state at {cell_notation}"
         self.moves_history.append({"player_color": piece_color, "move_desc": move_desc, "event_type": "jump"})
-        # הסרנו את קריאת הרענון:
-        # if self.refresh_callback:
-        #     self.refresh_callback()
 
     def _format_move(self, piece_type: str, from_coords: Tuple[int, int], to_coords: Tuple[int, int],
                      move_type: str, captured_type: str = None) -> str:
@@ -126,7 +111,6 @@ class MoveLoggerDisplay:
         temp_w, temp_h_for_line = text_size_info_temp[0]
         line_height = temp_h_for_line + self.padding_y
 
-        # --- Display Scores ---
         black_score_text = f"Black Score: {self.black_score}"
         score_text_info_black = cv2.getTextSize(black_score_text, self.font, self.font_scale, self.font_thickness)
         black_score_w, black_score_h = score_text_info_black[0]
@@ -149,7 +133,6 @@ class MoveLoggerDisplay:
         self.draw_sharp_text(display_img, white_score_text, (white_score_x, white_score_y),
                              self.font, self.font_scale, self.text_color, self.font_thickness)
 
-        # --- Position Move History ---
         moves_section_start_y = max(margin + line_height * 2, black_score_y + temp_h_for_line + self.padding_y * 2)
 
         available_height_for_moves = display_height - moves_section_start_y - margin
@@ -160,7 +143,6 @@ class MoveLoggerDisplay:
         white_moves_list = [entry["move_desc"] for entry in self.moves_history if entry["player_color"].lower() in ["white", "w"]]
         black_moves_list = [entry["move_desc"] for entry in self.moves_history if entry["player_color"].lower() in ["black", "b"]]
 
-        # --- White Moves Column (Left Side) ---
         white_col_x_start = margin
         current_y_white = moves_section_start_y
 
@@ -177,7 +159,6 @@ class MoveLoggerDisplay:
                                  self.font, self.font_scale, text_color, self.font_thickness)
             current_y_white += line_height
 
-        # --- Black Moves Column (Right Side) ---
         black_col_x_start = display_width - margin
         current_y_black = moves_section_start_y
 

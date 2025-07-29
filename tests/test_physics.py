@@ -1,14 +1,13 @@
 import pytest
 from implementation.mock_img import MockImg
-from implementation.board import Board  # תחליף לנתיב האמיתי שלך
-from implementation.command import Command  # תחליף לנתיב האמיתי שלך
+from implementation.board import Board
+from implementation.command import Command
 from implementation.physics import Physics, IdlePhysics, MovePhysics, JumpPhysics
 
 
 @pytest.fixture
 def board_with_mockimg():
     img = MockImg()
-    # נניח שה-board שלך דורש פרמטרים אלה:
     return Board(
         cell_H_pix=10,
         cell_W_pix=10,
@@ -41,14 +40,11 @@ def test_move_physics_reset_and_update(board_with_mockimg):
     assert mp.start_cell == (1, 1)
     assert mp.duration_s > 0
     
-    # לפני התחלת הזמן
     assert mp.update(999) is None
     
-    # באמצע התנועה (חצי מהזמן)
     mid_time = mp.start_time_ms + int(mp.duration_s * 500)
     assert mp.update(mid_time) is None
     
-    # לאחר סיום התנועה
     end_time = mp.start_time_ms + int(mp.duration_s * 1000) + 1
     finished_cmd = mp.update(end_time)
     assert finished_cmd is not None
@@ -58,12 +54,10 @@ def test_move_physics_reset_and_update(board_with_mockimg):
 
 def test_move_physics_reset_invalid_command(board_with_mockimg):
     mp = MovePhysics(start_cell=(0, 0), board=board_with_mockimg)
-    # פקודה עם סוג לא נכון
     bad_cmd = Command(timestamp=1000, type="Jump", piece_id="p1", params=[1, 2])
     with pytest.raises(ValueError):
         mp.reset(bad_cmd)
     
-    # פקודה עם פרמטרים לא נכונים
     bad_cmd2 = Command(timestamp=1000, type="Move", piece_id="p1", params=["a", 2])
     with pytest.raises(ValueError):
         mp.reset(bad_cmd2)
@@ -76,12 +70,10 @@ def test_jump_physics_reset_and_update(board_with_mockimg):
     
     assert jp.end_cell == (5, 6)
     assert jp.start_cell == (2, 2)
-    assert jp.duration_s == 1  # כפי שמוגדר ב-JumpPhysics.reset
+    assert jp.duration_s == 1
 
-    # לפני התחלת הזמן
     assert jp.update(999) is None
     
-    # לאחר סיום התנועה (כל הזמן = 1 שניה)
     finished_cmd = jp.update(jp.start_time_ms + 1000)
     assert finished_cmd is not None
     assert finished_cmd.type == "finished_jump"

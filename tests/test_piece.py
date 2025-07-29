@@ -1,91 +1,94 @@
-import numpy as np
-import cv2
 import pytest
-from implementation.piece import Piece
+from implementation.mock_img import MockImg
+from implementation.board import Board
 from implementation.command import Command
+from implementation.physics import Physics, IdlePhysics, MovePhysics, JumpPhysics
 
-# Dummy classes for testing Piece without תלות ביישומים החיצוניים
-
-class DummyPhysics:
-    def get_cell(self):
-        return (1, 2)
-    def get_pos(self):
-        return (1.0, 2.0)
-
-class DummyGraphics:
-    def __init__(self, state_name="idle"):
-        class DummyFolder:
-            def __init__(self, name):
-                self.name = name
-        # graphics עם שם מצב "idle"
-        self.sprites_folder = type("DummyParent", (), {"parent": DummyFolder(state_name)})
-    def get_img(self):
-        # תמונה ריקה בגודל 50x50 עם 4 ערוצים
-        img = np.zeros((50,50,4), dtype=np.uint8)
-        # נדרשת implement צלמית מינימלית
-        return type("DummyImg", (), {
-            "img": img,
-            "copy": lambda self: self,
-            "draw_on": lambda self, other_img, x, y, alpha=1.0: None,
-            "get_width": lambda self: 50,
-            "get_height": lambda self: 50
-        })()
-
-class DummyMoves:
-    def get_moves(self, r, c, all_occupied_cells, occupied_enemy_cells, can_jump, piece_type, my_color):
-        # מחזיר תנועה דמיונית: תאים סמוכים
-        return [(r+1, c), (r, c+1)]
-
-class DummyState:
-    def __init__(self):
-        self.physics = DummyPhysics()
-        self.graphics = DummyGraphics()
-        self.moves = DummyMoves()
-    def process_command(self, cmd, now_ms):
-        return self
-    def update(self, now_ms):
-        return self
-    def reset(self, cmd):
-        pass
-    def get_command(self):
-        return None
-    def can_transition(self, now_ms):
-        return True
-    def get_graphics(self):
-        return self.graphics
-    def get_physics(self):
-        return self.physics
-    def get_moves(self):
-        return self.moves
-    def get_state(self):
-        return "idle"
-
-# נשתמש במחלקת Command המקורית - DummyCommand לא משנה דבר כאן
-class DummyCommand(Command):
-    pass
 
 @pytest.fixture
-def dummy_state():
-    return DummyState()
+def board_with_mockimg():
+    img = MockImg()
+    return Board(
+        cell_H_pix=10,
+        cell_W_pix=10,
+        cell_H_m=1.0,
+        cell_W_m=1.0,
+        W_cells=8,
+        H_cells=8,
+        img=img
+    )
 
-@pytest.fixture
-def piece(dummy_state):
-    # יצירת כלי עם piece_id "pW" (למשל, 'pW' – p=pawn, W=color white)
-    return Piece(piece_id='pW', init_state=dummy_state, color='white')
 
-def test_get_color(piece):
-    # בודק אם get_color מחזיר את הצבע הנכון
-    assert piece.get_color() == 'white'
+def test_physics_initialization(board_with_mockimg):
+    p = Physics(start_cell=(1, 2), board=board_with_mockimg, speed_m_s=2.0)
+    assert p.cur_pos_m == (1.0 * board_with_mockimg.cell_W_m, 2.0 * board_with_mockimg.cell_H_m)
+    assert p.speed == 2.0
+    assert p.get_cell() == (1, 2)
 
-def test_get_type_piece(piece):
-    # מצפים שהאות הראשונה של piece_id תהיה אות גדולה
-    assert piece.get_type_piece() == 'P'
 
-def test_get_moves(piece):
-    # שיטת get_moves משתמשת ב-DummyMoves שמחזירה את [(r+1, c), (r, c+1)]
-    # עם current cell מתוך DummyPhysics (1,2)
-    moves = piece.get_moves([piece])
-    expected = [(2,2), (1,3)]
-    assert moves == expected
+def test_idle_physics_update_returns_none(board_with_mockimg):
+    p = IdlePhysics(start_cell=(0, 0), board=board_with_mockimg)
+    assert p.update(1000) is None
 
-# ...existing code can be extended with tests נוספים עבור on_command, update, draw_on_board וכו' אם נדרש...
+
+def test_move_physics_reset_and_update(board_with_mockimg):
+    cmd = Command(timestamp=1000, type="Move", piece_id="p1", params=[3, 4], source_cell=(1, 1))
+    mp = MovePhysics(start_cell=(1, 1), board=board_with_mockimg, speed_m_s=1.0)
+    mp.reset(cmd)
+    
+    assert mp.end_cell == (3, 4)
+    assert mp.start_cell == (1, 1)
+    assert mp.duration_s > 0
+    
+    assert mp.update(999) is None
+    
+    mid_time = mp.start_time_ms + int(mp.duration_s * 500)
+    assert mp.update(mid_time) is None
+    
+    end_time = mp.start_time_ms + int(mp.duration_s * 1000) + 1
+    finished_cmd = mp.update(end_time)
+    assert finished_cmd is not None
+    assert finished_cmd.type == "finished_movement"
+    assert finished_cmd.piece_id == "p1"
+
+
+def test_move_physics_reset_invalid_command(board_with_mockimg):
+    mp = MovePhysics(start_cell=(0, 0), board=board_with_mockimg)
+    bad_cmd = Command(timestamp=1000, type="Jump", piece_id="p1", params=[1, 2])
+    with pytest.raises(ValueError):
+        mp.reset(bad_cmd)
+    
+    bad_cmd2 = Command(timestamp=1000, type="Move", piece_id="p1", params=["a", 2])
+    with pytest.raises(ValueError):
+        mp.reset(bad_cmd2)
+
+
+def test_jump_physics_reset_and_update(board_with_mockimg):
+    cmd = Command(timestamp=1000, type="Jump", piece_id="p2", params=[5, 6], source_cell=(2, 2))
+    jp = JumpPhysics(start_cell=(2, 2), board=board_with_mockimg)
+    jp.reset(cmd)
+    
+    assert jp.end_cell == (5, 6)
+    assert jp.start_cell == (2, 2)
+    assert jp.duration_s == 1
+
+    assert jp.update(999) is None
+    
+    finished_cmd = jp.update(jp.start_time_ms + 1000)
+    assert finished_cmd is not None
+    assert finished_cmd.type == "finished_jump"
+    assert finished_cmd.piece_id == "p2"
+
+
+def test_can_be_captured_and_can_capture_methods(board_with_mockimg):
+    p = Physics(start_cell=(0, 0), board=board_with_mockimg)
+    assert p.can_be_captured() is True
+    assert p.can_capture() is False
+
+    mp = MovePhysics(start_cell=(0, 0), board=board_with_mockimg)
+    assert mp.can_be_captured() is False
+    assert mp.can_capture() is True
+
+    jp = JumpPhysics(start_cell=(0, 0), board=board_with_mockimg)
+    assert jp.can_be_captured() is False
+    assert jp.can_capture() is True

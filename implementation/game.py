@@ -3,12 +3,12 @@ import pathlib
 import queue, threading, time, cv2, math
 from typing import List, Dict, Tuple, Optional
 
-from implementation.graphics import Graphics
-from implementation.piece_factory import PieceFactory
-from implementation.publish_subscribe.event_manager import EventManager, EventType
-from implementation.publish_subscribe.message_display import MessageDisplay
-from implementation.publish_subscribe.move_logger_display import MoveLoggerDisplay
-from implementation.publish_subscribe.sound_subscriber import SoundSubscriber 
+from .graphics import Graphics
+from .piece_factory import PieceFactory
+from .publish_subscribe.event_manager import EventManager, EventType
+from .publish_subscribe.message_display import MessageDisplay
+from .publish_subscribe.move_logger_display import MoveLoggerDisplay
+from .publish_subscribe.sound_subscriber import SoundSubscriber 
 from .board import Board
 from .command import Command
 from .piece import Piece
@@ -18,7 +18,7 @@ class InvalidBoard(Exception):
     pass
 
 class Game:
-    def __init__(self, pieces: List[Piece], board: Board, event_manager: EventManager, background_img: Img, move_logger_display: MoveLoggerDisplay,message_display: MessageDisplay,sound_subscriber: SoundSubscriber,piece_factory:PieceFactory):
+    def __init__(self, pieces: List[Piece], board: Board, event_manager: EventManager, background_img: Img, move_logger_display: MoveLoggerDisplay, message_display: MessageDisplay, sound_subscriber: SoundSubscriber, piece_factory: PieceFactory):
         self.board = board
         self.pieces: Dict[str, Piece] = {p.piece_id: p for p in pieces}
         self.user_input_queue: queue.Queue = queue.Queue()
@@ -30,22 +30,16 @@ class Game:
         self.selected_piece_id: Optional[str] = None
         self.selected_cell: Optional[Tuple[int, int]] = None
         self.mouse_player_color: str = 'W'
-
         self.keyboard_cursor_cell: Tuple[int, int] = (0, 0)
         self.keyboard_selected_piece_id: Optional[str] = None
         self.keyboard_cursor_color: Tuple[int, int, int] = (255, 0, 0) 
         self.keyboard_cursor_thickness: int = 7
         self.keyboard_player_color: str = 'B' 
-
         self.event_manager = event_manager 
         self.move_logger_display = move_logger_display
         self.message_display = message_display
         self.sound_subscriber = sound_subscriber
-
-
-
         self.piece_factory = piece_factory
-    
     
     def game_time_ms(self) -> int:
         return (time.time_ns() - self.start_time_ns) // 1_000_000
@@ -61,9 +55,7 @@ class Game:
     def run(self):
         cv2.imshow("Board", self.board.img.img)
         cv2.setMouseCallback("Board", self._mouse_callback)
-
         self.start_user_input_thread()
-
         start_ms = self.game_time_ms()
         for p in self.pieces.values():
             cmd = Command(
@@ -91,23 +83,20 @@ class Game:
                 self.running = False
 
             if self._is_win():
-                # לא לצאת מיד מהלולאה! במקום זאת, לטפל בסיום המשחק
                 print("Game._run: Win condition met, initiating game end sequence.")
-                self._announce_win() # קרא לזה כאן
-                # הגדר משך זמן להצגת הודעת הסיום לפני סגירה
-                end_game_display_start_time = now # זמן תחילת הצגת הודעת הסיום
-                end_game_display_duration = self.message_display.message_duration_ms + 1000 # תן קצת יותר זמן מהודעת הסיום עצמה
+                self._announce_win()
+                end_game_display_start_time = now
+                end_game_display_duration = self.message_display.message_duration_ms + 1000
                 
-                # הישאר בלולאה כדי להציג את ההודעה
                 while self.game_time_ms() < end_game_display_start_time + end_game_display_duration:
                     current_time_after_win = self.game_time_ms()
                     self._draw(current_time_after_win)
-                    if not self._show(): # עדיין אפשר לסגור עם ESC
+                    if not self._show():
                         self.running = False
-                        break # צא גם מלולאת ההשהיה
-                    time.sleep(0.01) # תן למעבד קצת מנוחה
+                        break
+                    time.sleep(0.01)
                 
-                self.running = False # סיים את המשחק לאחר שההודעה הוצגה
+                self.running = False 
         self._announce_win()
         cv2.destroyAllWindows()
 
@@ -123,13 +112,11 @@ class Game:
         row = (y - board_y_on_screen) // self.board.cell_H_pix
         
         if not (0 <= col < self.board.W_cells and 0 <= row < self.board.H_cells):
-            print(f"Mouse click outside board: ({x}, {y}). Adjusted to: ({col}, {row}) but out of bounds.")
             self.selected_piece_id = None
             self.selected_cell = None
             return
         
         clicked_cell = (col, row) 
-
         clicked_piece_id = None
         for pid, piece in self.pieces.items():
             if piece.get_physics().get_cell() == clicked_cell:
@@ -138,7 +125,6 @@ class Game:
 
         if self.selected_piece_id is None:
             if clicked_piece_id:
-                # בדיקה: האם הכלי במצב idle
                 if self.pieces[clicked_piece_id].get_state() != 'idle':
                     print(f"Cannot select {clicked_piece_id} because it's not idle.")
                 elif clicked_piece_id[1] == self.mouse_player_color:
@@ -152,7 +138,7 @@ class Game:
             target_cell = clicked_cell
             piece = self.pieces[self.selected_piece_id]
             moves = piece.get_moves(list(self.pieces.values()))
-            if( target_cell == self.selected_cell ):
+            if target_cell == self.selected_cell:
                 cmd = Command(
                     timestamp=self.game_time_ms(),
                     piece_id=self.selected_piece_id,
@@ -171,12 +157,7 @@ class Game:
                     )
                     self.user_input_queue.put(cmd)
                 else:
-                    self.event_manager.publish(
-                    EventType.ILLEGAL_MOVE,
-                    # piece_color=clicked_piece_id[1],
-                    # piece_type=clicked_piece_id[0],
-                    # cell_coords=
-                )
+                    self.event_manager.publish(EventType.ILLEGAL_MOVE)
                     print(f"Illegal move for {self.selected_piece_id} → {target_cell}")
             self.selected_piece_id = None
             self.selected_cell = None
@@ -188,22 +169,14 @@ class Game:
         piece_moving = self.pieces[cmd.piece_id]
         original_cell = piece_moving.get_physics().get_cell()
 
-        # New check: if the piece is in long_rest state, ignore further processing
         if piece_moving.get_state() != 'idle':
-            self.event_manager.publish(
-                EventType.ILLEGAL_MOVE,
-                # piece_color=piece_moving.piece_id[1],
-                # piece_type=piece_moving.piece_id[0],
-                # cell_coords=original_cell
-            )
+            self.event_manager.publish(EventType.ILLEGAL_MOVE)
             print(f"Piece {piece_moving.piece_id} is in long_rest state. Command ignored.")
             return
         print(f"piece_moving: {piece_moving.get_state()}, cmd: {cmd.type}, params: {cmd.params}")
 
-
         if cmd.type == "Move":
             target_cell = tuple(cmd.params)
-
             capturing_piece = None
             for other_pid, other_piece in self.pieces.items():
                 if other_pid != piece_moving.piece_id and \
@@ -213,29 +186,15 @@ class Game:
                     capturing_piece = other_piece
                     break
             if piece_moving.piece_id[0] == 'P':
-                print(f"Pawn {piece_moving.piece_id} moving from {original_cell} to {target_cell}.")
-                if target_cell[1] == 7 or target_cell[1] == 0:  # עבור חייל לבן שהגיע לשורה 8
-                    # הפוך למלכה
-                    print(f" {cmd.source_cell[0]}  --- Pawn {piece_moving.piece_id} promoted to Queen at {target_cell}.")
-                    # piece_moving.piece_id = 'Q' + piece_moving.piece_id[1:]  # דוגמה להחלפת החייל במלכה
-                    # self._state = Graphics(sprites_folder=pathlib.Path('path_to_queen_sprites'), board=self.board)
-                    del self.pieces[piece_moving.piece_id]  # הסר את החייל
-                    queen = self.piece_factory.create_piece('Q'+piece_moving.piece_id[1], target_cell)
+                if target_cell[1] == 7 or target_cell[1] == 0:
+                    del self.pieces[piece_moving.piece_id]
+                    queen = self.piece_factory.create_piece('Q' + piece_moving.piece_id[1], target_cell)
                     if queen:
-                        self.pieces[queen.piece_id] = queen  # הוסף את המלכה החדשה
+                        self.pieces[queen.piece_id] = queen
                     else:
                         print("errrrrrrrr")
-                # elif target_cell[1] == 0:  # עבור חייל שחור שהגיע לשורה 1
-                #       # הפוך למלכה
-                #     print(f" {cmd.source_cell}  ---Pawn {piece_moving.piece_id} promoted to Queen at {target_cell}.")
-                #     piece_moving.piece_id = 'Q' + piece_moving.piece_id[1:]  # דוגמה להחלפת החייל במלכה
-                #     del self.pieces[piece_moving.piece_id]  # הסר את החייל
-                #     queen = self.piece_factory.create_piece('Q'+piece_moving.piece_id[1], target_cell)
-                #     self.pieces[queen.piece_id] = queen  # הוסף את המלכה החדשה
-            
             if capturing_piece:
                 print(f"Piece {piece_moving.piece_id} moved into {target_cell} and was captured by {capturing_piece.piece_id} (jump capture)!")
-                
                 self.event_manager.publish(
                     EventType.PIECE_CAPTURED,
                     piece_color=capturing_piece.piece_id[1],
@@ -245,7 +204,6 @@ class Game:
                     captured_piece_type=piece_moving.piece_id[0],
                     captured_piece_color=piece_moving.piece_id[1]
                 )
-                
                 del self.pieces[piece_moving.piece_id]
                 capturing_piece.is_jump = False
                 return
@@ -261,7 +219,6 @@ class Game:
             if piece_at_target_before_move:
                 if piece_moving.piece_id[1] != piece_at_target_before_move.piece_id[1]:
                     print(f"Piece {piece_moving.piece_id} captured {piece_at_target_before_move.piece_id} at {target_cell}!")
-                    
                     self.event_manager.publish(
                         EventType.PIECE_CAPTURED,
                         piece_color=piece_moving.piece_id[1],
@@ -271,7 +228,6 @@ class Game:
                         captured_piece_type=piece_at_target_before_move.piece_id[0],
                         captured_piece_color=piece_at_target_before_move.piece_id[1]
                     )
-                    
                     del self.pieces[piece_at_target_before_move.piece_id]
                     piece_moving.on_command(cmd, now_ms)
                     return
@@ -290,12 +246,8 @@ class Game:
 
         elif cmd.type == "Jump":
             target_cell = tuple(cmd.params)
-            
             piece_moving.is_jump = True
-            print(f"Piece {piece_moving.piece_id} is now in 'jump' state at {target_cell}.")
-            
             piece_moving.on_command(cmd, now_ms)
-            
             self.event_manager.publish(
                 EventType.PIECE_JUMPED,
                 piece_color=piece_moving.piece_id[1],
@@ -305,7 +257,6 @@ class Game:
 
     def _draw(self, now_ms: int):
         final_display_img_obj = self.background_img.copy() 
-
         cloned_board = self.board.clone()
 
         for p in self.pieces.values():
@@ -342,7 +293,6 @@ class Game:
         
         cloned_board.img.draw_on(final_display_img_obj, board_x_on_screen, board_y_on_screen)
 
-        
         self.message_display.draw(
             display_img=final_display_img_obj.img,
             display_width=self.screen_width,
@@ -358,7 +308,6 @@ class Game:
             board_width=board_width,
             board_height=board_height
         )
-        # print(f"Game._draw: Displaying board at ({board_x_on_screen}, {board_y_on_screen}) with size ({board_width}, {board_height})")
         self.current_frame = final_display_img_obj.img
 
     def _show(self) -> bool:
@@ -403,7 +352,6 @@ class Game:
 
         if self.keyboard_selected_piece_id is None:
             if clicked_piece_id:
-                # בדיקה: האם הכלי במצב idle
                 if self.pieces[clicked_piece_id].get_state() != 'idle':
                     print(f"Cannot select {clicked_piece_id} because it's not idle.")
                 elif clicked_piece_id[1] == self.keyboard_player_color:
@@ -419,7 +367,7 @@ class Game:
             piece_to_move = self.pieces[self.keyboard_selected_piece_id]
             moves = piece_to_move.get_moves(list(self.pieces.values()))
             
-            if(target_cell == self.keyboard_selected_piece_original_cell):
+            if target_cell == self.keyboard_selected_piece_original_cell:
                 cmd = Command(
                     timestamp=self.game_time_ms(),
                     piece_id=self.keyboard_selected_piece_id,
