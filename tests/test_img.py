@@ -2,7 +2,7 @@
 # import numpy as np
 # import pathlib
 # import cv2
-# from implementation.mo import Img  # ודא שהקובץ img_class.py נמצא באותה תיקייה
+# from implementation.img import Img  # ודא שהקובץ img_class.py נמצא באותה תיקייה
 
 
 # # נתיבים לקובצי בדיקה (יש לוודא שקיימים או ליצור אותם לפני ההרצה)
